@@ -23,20 +23,23 @@ JANELA_SEGUNDOS = 60         # ...a cada 60 segundos
 estado = {"pronto": False, "erro": None, "retriever": None, "llm": None}
 _acessos = defaultdict(deque)
 
-
 def _preparar_rag():
     """Roda em segundo plano para o servidor abrir a porta imediatamente."""
+    inicio = time.time()
     try:
         if not os.getenv("GROQ_API_KEY"):
             raise RuntimeError("Variável de ambiente GROQ_API_KEY não configurada.")
+
+        print("[INFO] Importando bibliotecas...", flush=True)
         import rag
+        print(f"[INFO] Bibliotecas importadas em {time.time() - inicio:.1f}s", flush=True)
 
         estado["retriever"], estado["llm"] = rag.iniciar_rag()
+        print(f"[INFO] Chatbot pronto em {time.time() - inicio:.1f}s", flush=True)
         estado["pronto"] = True
     except Exception as erro:  # noqa: BLE001
         estado["erro"] = str(erro)
         print(f"[ERRO] Falha ao iniciar o RAG: {erro}", flush=True)
-
 
 threading.Thread(target=_preparar_rag, daemon=True).start()
 
