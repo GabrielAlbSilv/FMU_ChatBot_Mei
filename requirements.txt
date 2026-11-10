@@ -1,9 +1,8 @@
-flask
-gunicorn
-python-dotenv
-langchain-community
-langchain-text-splitters
-langchain-chroma
-langchain-groq
-fastembed
-pypdf
+streamlit>=1.40,<2
+python-dotenv>=1.0,<2
+langchain-community>=0.3,<1
+langchain-text-splitters>=0.3,<2
+langchain-chroma>=0.2,<2
+langchain-groq>=0.2,<1
+fastembed>=0.7,<1
+pypdf>=5,<7
