@@ -5,6 +5,25 @@ const botao = document.getElementById("enviar");
 const statusEl = document.getElementById("status");
 const sugestoes = document.getElementById("sugestoes");
 
+const telaCarregando = document.getElementById("tela-carregando");
+const msgCarregando = document.getElementById("carregando-msg");
+const inicioCarregamento = Date.now();
+
+function esconderTelaCarregando() {
+  telaCarregando.classList.add("oculta");
+  setTimeout(() => telaCarregando.remove(), 500);
+  campo.focus();
+}
+
+function atualizarMensagemCarregando() {
+  const segundos = (Date.now() - inicioCarregamento) / 1000;
+  if (segundos > 40) {
+    msgCarregando.textContent = "Quase lá… o servidor gratuito demora um pouco para acordar.";
+  } else if (segundos > 10) {
+    msgCarregando.textContent = "Carregando os documentos sobre MEI…";
+  }
+}
+
 let pronto = false;
 let enviando = false;
 
@@ -68,6 +87,9 @@ async function verificarStatus() {
     if (d.erro) {
       statusEl.textContent = "Indisponível";
       statusEl.className = "status erro";
+      telaCarregando.classList.add("falhou");
+      telaCarregando.querySelector("h2").textContent = "Não foi possível iniciar";
+      msgCarregando.textContent = "Recarregue a página em alguns instantes. Se o problema continuar, tente mais tarde.";
       return;
     }
     if (d.pronto) {
@@ -75,12 +97,14 @@ async function verificarStatus() {
       statusEl.textContent = "Online";
       statusEl.className = "status pronto";
       atualizarBotao();
+      esconderTelaCarregando();
       return;
     }
   } catch (_) { /* servidor acordando; tenta de novo */ }
   statusEl.textContent = "Preparando…";
   statusEl.className = "status carregando";
-  setTimeout(verificarStatus, 3000);
+  atualizarMensagemCarregando();
+  setTimeout(verificarStatus, 2000);
 }
 
 /* ---------- envio de perguntas ---------- */

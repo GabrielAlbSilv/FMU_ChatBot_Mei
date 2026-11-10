@@ -87,3 +87,23 @@ body {
 .entrada button:hover:not(:disabled) { background: var(--primaria-escura); }
 .entrada button:disabled { opacity: .5; cursor: not-allowed; }
 .rodape { padding: 0 18px 12px; font-size: 11px; color: var(--suave); text-align: center; }
+
+
+/* ---------- Tela de carregamento ---------- */
+.tela-carregando {
+  position: fixed; inset: 0; z-index: 1000;
+  display: grid; place-items: center; padding: 24px;
+  background: var(--bg);
+  transition: opacity .4s ease, visibility .4s ease;
+}
+.tela-carregando.oculta { opacity: 0; visibility: hidden; }
+.carregando-conteudo { text-align: center; max-width: 360px; }
+.carregando-conteudo h2 { margin: 18px 0 8px; font-size: 20px; }
+.carregando-conteudo p { margin: 0; color: var(--suave); font-size: 14px; line-height: 1.5; }
+.spinner {
+  width: 48px; height: 48px; margin: 0 auto;
+  border: 4px solid var(--borda); border-top-color: var(--primaria);
+  border-radius: 50%; animation: girar 0.9s linear infinite;
+}
+.tela-carregando.falhou .spinner { display: none; }
+@keyframes girar { to { transform: rotate(360deg); } }
