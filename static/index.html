@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chatbot MEI</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topo">
+      <div class="logo" aria-hidden="true">M</div>
+      <div>
+        <h1>Chatbot MEI</h1>
+        <p>Tire dúvidas sobre o Microempreendedor Individual</p>
+      </div>
+      <span id="status" class="status carregando" title="Estado do chatbot">Preparando…</span>
+    </header>
+
+    <section id="mensagens" class="mensagens" aria-live="polite">
+      <div class="msg bot">
+        <div class="balao">
+          Olá! Sou o assistente sobre MEI. Pergunte sobre abertura, impostos (DAS),
+          obrigações, limites de faturamento e mais.
+        </div>
+      </div>
+      <div id="sugestoes" class="sugestoes">
+        <button type="button">Quem pode ser MEI?</button>
+        <button type="button">Qual o limite de faturamento anual?</button>
+        <button type="button">Quanto o MEI paga de imposto por mês?</button>
+      </div>
+    </section>
+
+    <form id="formulario" class="entrada" autocomplete="off">
+      <textarea id="pergunta" rows="1" maxlength="1000"
+                placeholder="Digite sua pergunta…" aria-label="Pergunta"></textarea>
+      <button id="enviar" type="submit">Enviar</button>
+    </form>
+
+    <footer class="rodape">
+      As respostas são geradas por IA com base em documentos oficiais sobre MEI e podem conter erros.
+      Confirme informações importantes no Portal do Empreendedor.
+    </footer>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
