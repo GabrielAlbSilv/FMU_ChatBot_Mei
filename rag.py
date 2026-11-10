@@ -1,38 +1,47 @@
-"""Lógica do RAG (mesma ideia do app.py original em Streamlit).
+"""Lógica RAG do Chatbot MEI.
 
-Fica separada do servidor para poder ser usada também no build do Render
-(construir_indice.py), deixando o chatbot rápido para iniciar.
+O índice vetorial é gerado durante o build do Render por construir_indice.py.
+Na inicialização do servidor, apenas carregamos o índice persistido.
 """
 import os
 import re
+import shutil
 
-PASTA_PROJETO = os.path.dirname(os.path.abspath(__file__))
-PASTA_BANCO = os.path.join(PASTA_PROJETO, "chroma_db")
-PASTA_MODELO = os.path.join(PASTA_PROJETO, "modelo_cache")
+from pathlib import Path
 
-# Mesmo padrão do projeto original: 1-...._MEI.pdf até 5-...._MEI.pdf
+PASTA_PROJETO = Path(__file__).resolve().parent
+PASTA_BANCO = PASTA_PROJETO / "chroma_db"
+PASTA_MODELO = PASTA_PROJETO / "modelo_cache"
+NOME_COLECAO = "mei_documentos"
+
+# Mantém o padrão dos cinco documentos oficiais utilizados pelo projeto.
 PADRAO_ARQUIVOS = re.compile(r"^[1-5]-.*_mei\.pdf$", re.IGNORECASE)
 
 
 def listar_pdfs():
+    """Localiza e ordena os PDFs do MEI na raiz do projeto."""
     return sorted(
-        a for a in os.listdir(PASTA_PROJETO) if PADRAO_ARQUIVOS.match(a)
+        arquivo
+        for arquivo in PASTA_PROJETO.iterdir()
+        if arquivo.is_file() and PADRAO_ARQUIVOS.match(arquivo.name)
     )
 
 
 def criar_embeddings():
-    # FastEmbed roda o MESMO modelo (all-MiniLM-L6-v2) via ONNX, sem PyTorch.
-    # Usa muito menos memória, o que é essencial nos 512 MB do Render.
+    """Cria o modelo leve ONNX e reutiliza o cache baixado no build."""
     from langchain_community.embeddings import FastEmbedEmbeddings
 
     return FastEmbedEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2",
-        cache_dir=PASTA_MODELO,
+        cache_dir=str(PASTA_MODELO),
+        threads=2,
+        doc_embed_type="passage",
+        query_embed_type="query",
     )
 
 
 def construir_indice(embeddings):
-    """Lê os PDFs, divide em chunks e grava o banco vetorial em disco."""
+    """Lê os PDFs, gera os chunks e grava o índice vetorial em disco."""
     from langchain_community.document_loaders import PyPDFLoader
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     from langchain_chroma import Chroma
@@ -40,41 +49,70 @@ def construir_indice(embeddings):
     arquivos = listar_pdfs()
     if not arquivos:
         raise FileNotFoundError(
-            "Nenhum PDF encontrado na raiz do projeto "
-            "(esperado: arquivos de 1 a 5 terminando em '_MEI.pdf')."
+            "Nenhum PDF MEI encontrado na raiz do projeto. "
+            "Esperado: arquivos de 1 a 5 terminando em '_MEI.pdf'."
         )
 
     documentos = []
-    for nome in arquivos:
-        paginas = PyPDFLoader(os.path.join(PASTA_PROJETO, nome)).load()
+    for arquivo in arquivos:
+        print(f"[INDEX] Lendo {arquivo.name}...", flush=True)
+        paginas = PyPDFLoader(str(arquivo)).load()
         for pagina in paginas:
-            pagina.metadata["fonte"] = nome
+            pagina.metadata["fonte"] = arquivo.name
         documentos.extend(paginas)
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+    )
     chunks = splitter.split_documents(documentos)
 
-    return Chroma.from_documents(
+    if not chunks:
+        raise RuntimeError(
+            "Os PDFs foram encontrados, mas nenhum texto pôde ser extraído."
+        )
+
+    print(f"[INDEX] {len(chunks)} trechos preparados.", flush=True)
+
+    # Evita misturar dados de uma versão anterior dos documentos.
+    if PASTA_BANCO.exists():
+        shutil.rmtree(PASTA_BANCO)
+
+    banco = Chroma.from_documents(
         documents=chunks,
         embedding=embeddings,
-        persist_directory=PASTA_BANCO,
+        collection_name=NOME_COLECAO,
+        persist_directory=str(PASTA_BANCO),
     )
+
+    print("[INDEX] Banco vetorial criado com sucesso.", flush=True)
+    return banco
 
 
 def iniciar_rag():
-    """Carrega o banco já pronto (ou cria, se não existir) e configura o LLM."""
+    """Carrega o índice persistido e configura o modelo de linguagem."""
     from langchain_chroma import Chroma
     from langchain_groq import ChatGroq
 
     embeddings = criar_embeddings()
 
-    if os.path.isdir(PASTA_BANCO) and os.listdir(PASTA_BANCO):
-        banco = Chroma(persist_directory=PASTA_BANCO, embedding_function=embeddings)
-    else:
+    # Fallback útil para execução local ou caso o build não tenha criado o índice.
+    if not PASTA_BANCO.is_dir() or not any(PASTA_BANCO.iterdir()):
+        print("[RAG] Índice não encontrado; criando a base...", flush=True)
         banco = construir_indice(embeddings)
+    else:
+        print("[RAG] Carregando índice vetorial persistido...", flush=True)
+        banco = Chroma(
+            collection_name=NOME_COLECAO,
+            persist_directory=str(PASTA_BANCO),
+            embedding_function=embeddings,
+        )
 
     retriever = banco.as_retriever(search_kwargs={"k": 5})
-    llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
+    llm = ChatGroq(
+        model="openai/gpt-oss-120b",
+        temperature=0,
+    )
     return retriever, llm
 
 
@@ -98,11 +136,16 @@ Pergunta:
 
 
 def responder(retriever, llm, pergunta):
+    """Recupera os trechos relevantes e gera a resposta com indicação das fontes."""
     documentos = retriever.invoke(pergunta)
     contexto = "\n\n".join(
-        f"[Fonte: {d.metadata.get('fonte', 'desconhecida')}]\n{d.page_content}"
-        for d in documentos
+        f"[Fonte: {documento.metadata.get('fonte', 'desconhecida')}]\n"
+        f"{documento.page_content}"
+        for documento in documentos
     )
     resposta = llm.invoke(montar_prompt(contexto, pergunta)).content
-    fontes = sorted({d.metadata.get("fonte", "desconhecida") for d in documentos})
+    fontes = sorted({
+        documento.metadata.get("fonte", "desconhecida")
+        for documento in documentos
+    })
     return resposta, fontes

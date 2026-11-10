@@ -54,3 +54,7 @@ desktop.ini
 .pytest_cache/
 .coverage
 htmlcov/
+
+# FastEmbed model cache (downloaded during Render build)
+modelo_cache/
+.fastembed_cache/
