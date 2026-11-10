@@ -1,4 +1,5 @@
-import os # Biblioteca para acessar variáveis de ambiente
+import os # Biblioteca para acessar variáveis de ambiente e listar arquivos
+import re # Biblioteca para localizar os PDFs pelo padrão do nome
 import streamlit as st # Framework para criar a interface web do chatbot
 from dotenv import load_dotenv # Função que carrega as variáveis do arquivo .env
 from langchain_community.document_loaders import PyPDFLoader # Carrega documentos em formato PDF
@@ -25,40 +26,75 @@ if not os.getenv("GROQ_API_KEY"):
 #2. INTERFACE INICIAL
 
 # Exibe o título principal da aplicação
-st.title("Chatbot Trabalho Garantido")
+st.title("Chatbot MEI")
 
 # Exibe uma mensagem de orientação ao usuário
-st.write("Faça perguntas sobre o edital do programa.")
+st.write("Faça perguntas sobre o Microempreendedor Individual (MEI).")
 
 #Para testar: python -m streamlit run app.py
 #ctrl c para parar a execução do streamlit
 
 
-#3. PREPARAÇÃO DO RAG
+#3. FONTES DE DADOS (PDFs NA RAIZ DO PROJETO)
+
+# Os PDFs devem estar na mesma pasta do app.py e seguir o padrão:
+# número de 1 a 5, hífen, qualquer nome, terminando em "_MEI.pdf"
+# Exemplos: 1-Cartilha_MEI.pdf, 2-Perguntas_Respostas_MEI.pdf ... 5-Impostos_PF_MEI.pdf
+# A busca ignora diferença entre maiúsculas e minúsculas (_MEI.pdf ou _Mei.pdf)
+PADRAO_ARQUIVOS = re.compile(r"^[1-5]-.*_mei\.pdf$", re.IGNORECASE)
+
+# Pasta onde está o app.py (raiz do projeto)
+PASTA_PROJETO = os.path.dirname(os.path.abspath(__file__))
+
+
+def listar_pdfs():
+
+    # Lista os arquivos da raiz do projeto que seguem o padrão e os ordena (1, 2, 3, 4, 5)
+    return sorted(
+        arquivo for arquivo in os.listdir(PASTA_PROJETO)
+        if PADRAO_ARQUIVOS.match(arquivo)
+    )
+
+
+#4. PREPARAÇÃO DO RAG
 
 # Armazena em cache os recursos criados pela função
 # Evita reconstruir o banco vetorial a cada interação
 @st.cache_resource
 def iniciar_rag():
 
-    #3.1. CARREGAMENTO DO DOCUMENTO PDF
+    #4.1. CARREGAMENTO DOS DOCUMENTOS PDF
 
-    # Cria o carregador do arquivo PDF
-    carregador = PyPDFLoader("EDITAL_Trabalho_Garantido.pdf")
+    # Localiza os PDFs do MEI na raiz do projeto
+    arquivos_pdf = listar_pdfs()
 
-    # Lê o PDF e transforma seu conteúdo em objetos Document
-    documentos = carregador.load()
+    # Interrompe se nenhum PDF for encontrado
+    if not arquivos_pdf:
+        raise FileNotFoundError(
+            "Nenhum PDF encontrado na raiz do projeto. "
+            "Esperado: arquivos de 1 a 5 terminando em '_MEI.pdf'."
+        )
 
-    # Exibe a quantidade de páginas carregadas
-    #st.write("Quantidade de páginas carregadas:", len(documentos))
+    # Lista que reunirá as páginas de todos os PDFs
+    documentos = []
 
-    # Exibe o texto extraído da primeira página
-    #st.subheader("Texto da primeira página")
+    for nome_arquivo in arquivos_pdf:
 
-    #st.write(documentos[0].page_content)
+        # Cria o carregador do arquivo PDF
+        carregador = PyPDFLoader(os.path.join(PASTA_PROJETO, nome_arquivo))
+
+        # Lê o PDF e transforma seu conteúdo em objetos Document (um por página)
+        paginas = carregador.load()
+
+        # Registra o nome do arquivo de origem nos metadados de cada página
+        for pagina in paginas:
+            pagina.metadata["fonte"] = nome_arquivo
+
+        # Adiciona as páginas à lista geral
+        documentos.extend(paginas)
 
 
-    #3.2. DIVISÃO DO DOCUMENTO EM CHUNKS
+    #4.2. DIVISÃO DOS DOCUMENTOS EM CHUNKS
 
     # Configura a divisão dos textos em trechos menores
     splitter = RecursiveCharacterTextSplitter(
@@ -70,7 +106,7 @@ def iniciar_rag():
     chunks = splitter.split_documents(documentos)
 
 
-    #3.3. MODELO DE EMBEDDINGS
+    #4.3. MODELO DE EMBEDDINGS
 
     # Carrega o modelo de embeddings do Hugging Face. O modelo transforma textos em vetores numéricos
     embeddings = HuggingFaceEmbeddings(
@@ -78,7 +114,7 @@ def iniciar_rag():
     )
 
 
-    #3.4. BANCO VETORIAL CHROMA
+    #4.4. BANCO VETORIAL CHROMA
 
     # Cria o banco vetorial a partir dos chunks
     # O Chroma utiliza o modelo configurado para gerar os embeddings e armazenar textos, vetores e metadados
@@ -88,7 +124,7 @@ def iniciar_rag():
     )
 
 
-    #3.5. CONFIGURAÇÃO DO RETRIEVER
+    #4.5. CONFIGURAÇÃO DO RETRIEVER
 
     # Configura o recuperador de informações do Chroma
     # Ele será responsável por buscar os chunks mais
@@ -97,11 +133,11 @@ def iniciar_rag():
     retriever = banco.as_retriever(search_kwargs={"k": 5})
 
 
-    #3.6. CONFIGURAÇÃO DO LLM
+    #4.6. CONFIGURAÇÃO DO LLM
 
     # Configura o modelo de linguagem acessado pela Groq
     # O LLM será responsável por gerar as respostas
-    # com base nos trechos recuperados do edital
+    # com base nos trechos recuperados dos documentos do MEI
     # Configura a temperatura do modelo, que influencia a variabilidade das respostas.
     # Valores menores tendem a produzir respostas mais consistentes e menos variadas.
     llm = ChatGroq(
@@ -113,7 +149,7 @@ def iniciar_rag():
     return retriever, llm
 
 
-#4. INICIALIZAÇÃO DO CHATBOT
+#5. INICIALIZAÇÃO DO CHATBOT
 
 try:
 
@@ -132,7 +168,7 @@ except Exception as erro:
     st.stop()
 
 
-#5. HISTÓRICO DE MENSAGENS
+#6. HISTÓRICO DE MENSAGENS
 
 # Verifica se a lista de mensagens já existe na sessão
 if "mensagens" not in st.session_state:
@@ -153,7 +189,7 @@ for mensagem in st.session_state.mensagens:
         st.markdown(mensagem["content"])
 
 
-#6. RECEBER A PERGUNTA DO USUÁRIO
+#7. RECEBER A PERGUNTA DO USUÁRIO
 
 # Exibe o campo para o usuário digitar sua pergunta
 if pergunta := st.chat_input("Digite sua pergunta..."):
@@ -169,32 +205,35 @@ if pergunta := st.chat_input("Digite sua pergunta..."):
     })
 
 
-    #7. RECUPERAR INFORMAÇÕES E GERAR RESPOSTA
+    #8. RECUPERAR INFORMAÇÕES E GERAR RESPOSTA
 
     # Cria o espaço para a resposta do chatbot
     with st.chat_message("assistant"):
 
         # Exibe uma mensagem durante o processamento
-        with st.spinner("Consultando o edital..."):
+        with st.spinner("Consultando os documentos do MEI..."):
 
             try:
                 # Recupera os chunks relevantes para a pergunta
                 documentos = retriever.invoke(pergunta)
 
-                # Reúne os textos recuperados em um único contexto
+                # Reúne os textos recuperados em um único contexto,
+                # identificando o arquivo de origem de cada trecho
                 contexto = "\n\n".join(
-                    doc.page_content for doc in documentos
+                    f"[Fonte: {doc.metadata.get('fonte', 'desconhecida')}]\n{doc.page_content}"
+                    for doc in documentos
                 )
 
                 # Monta as instruções enviadas ao modelo de linguagem
                 prompt = f"""
-                Você é um assistente do Programa Trabalho Garantido.
+                Você é um assistente especializado em Microempreendedor Individual (MEI).
 
                 Responda utilizando apenas as informações
-                do edital fornecidas abaixo.
+                dos documentos do MEI fornecidos abaixo.
+                Não utilize conhecimento externo.
 
                 Se não encontrar a resposta, informe que
-                a informação não foi localizada no edital.
+                a informação não foi localizada nos documentos do MEI.
 
                 Contexto:
                 {contexto}
@@ -216,5 +255,5 @@ if pergunta := st.chat_input("Digite sua pergunta..."):
                 })
 
             except Exception as erro:
-                # Exibe uma mensagem caso ocorra algum erro
+                # Exibe uma mensagem caso ocorra um erro
                 st.error(f"Erro ao responder: {erro}")

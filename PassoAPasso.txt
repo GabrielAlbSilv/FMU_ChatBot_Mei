@@ -1,6 +1,8 @@
 1.Crie a pasta do projeto
 
 2.Abra o vscode e abra a pasta do projeto dentro do vscode
+		2.1 Instale o Phyton, comando:
+			winget install 9NQ7512CXL7T -e --accept-source-agreements --accept-package-agreements --disable-interactivity
 
 3.Crie os arquivos app.py, requirements.txt e .env
 		1: EM .env GERE O COMANDO GROQ_API_KEY="ChaveApiAqui"
