@@ -22,7 +22,7 @@ import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 
-VERSAO = "rag-leve-v6"
+VERSAO = "rag-leve-v7"
 ETAPA = "rag.py novo carregando"
 
 
@@ -52,7 +52,7 @@ SOBREPOSICAO = 250
 K = 8
 LIMITE_INDICE = 8.5   # '?' por 1000 caracteres: acima disso a página é um índice de perguntas
 
-PADRAO_ARQUIVOS = re.compile(r"^[1-5]-.*_mei\.pdf$", re.IGNORECASE)
+PADRAO_ARQUIVOS = re.compile(r"^\d+-.+\.pdf$", re.IGNORECASE)   # ex.: 6-Cartilha_Impostos.pdf
 
 
 def listar_pdfs():
@@ -111,7 +111,7 @@ def extrair_trechos():
 
     arquivos = listar_pdfs()
     if not arquivos:
-        raise FileNotFoundError("Nenhum PDF MEI (1 a 5, terminando em _MEI.pdf) na raiz do projeto.")
+        raise FileNotFoundError("Nenhum PDF numerado (ex.: 1-Cartilha_MEI.pdf) na raiz do projeto.")
 
     trechos = []
     for arquivo in arquivos:
@@ -130,6 +130,7 @@ def extrair_trechos():
             texto_total += limpo + " "
         print(f"[INDEX] {arquivo.name}: {len(leitor.pages)} págs ({ignoradas} de índice ignoradas)", flush=True)
 
+        antes = len(trechos)
         for inicio, trecho in _dividir(texto_total):
             pagina = 1
             for pos, num in marcas:
@@ -138,6 +139,9 @@ def extrair_trechos():
                 else:
                     break
             trechos.append({"fonte": arquivo.name, "pagina": pagina, "texto": trecho})
+        if len(trechos) == antes:
+            print(f"[INDEX] AVISO: nenhum texto extraído de {arquivo.name} "
+                  "(PDF escaneado/imagem? precisa de OCR).", flush=True)
 
     if not trechos:
         raise RuntimeError("Nenhum texto pôde ser extraído dos PDFs.")
@@ -165,7 +169,8 @@ def construir_indice(embeddings):
     PASTA_INDICE.mkdir(exist_ok=True)
     np.save(ARQ_VETORES, matriz)
     ARQ_TRECHOS.write_text(json.dumps(trechos, ensure_ascii=False), encoding="utf-8")
-    ARQ_META.write_text(json.dumps({"versao": VERSAO_INDICE}), encoding="utf-8")
+    arquivos = sorted({t["fonte"] for t in trechos})
+    ARQ_META.write_text(json.dumps({"versao": VERSAO_INDICE, "arquivos": arquivos}), encoding="utf-8")
     print("[INDEX] Índice criado com sucesso.", flush=True)
 
 

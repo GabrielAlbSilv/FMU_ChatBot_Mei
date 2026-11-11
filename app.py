@@ -64,6 +64,15 @@ def _info_arquivo_rag():
         return {"rag_no_disco": f"erro ao ler: {e}"}
 
 
+def _pdfs_indexados():
+    """Lista de PDFs que entraram no índice (lida do meta.json gerado no build)."""
+    try:
+        import json
+        return json.loads((_AQUI / "indice" / "meta.json").read_text(encoding="utf-8")).get("arquivos")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _carregar_modulo_rag():
     """Carrega rag.py por caminho, evitando qualquer conflito de import."""
     spec = importlib.util.spec_from_file_location("rag_mei", _ARQ_RAG)
@@ -156,6 +165,7 @@ def status():
         thread_init_viva=any(t.name == "init-rag" for t in threading.enumerate()),
         commit=(os.getenv("RENDER_GIT_COMMIT") or "?")[:8],
         indice_no_disco=(_AQUI / "indice" / "vetores.npy").is_file(),
+        pdfs_indexados=_pdfs_indexados(),
         **_info_arquivo_rag(),
     )
     if iniciando:
