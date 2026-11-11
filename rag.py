@@ -22,7 +22,7 @@ import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 
-VERSAO = "rag-leve-v5"
+VERSAO = "rag-leve-v6"
 ETAPA = "rag.py novo carregando"
 
 
@@ -142,6 +142,12 @@ def extrair_trechos():
     if not trechos:
         raise RuntimeError("Nenhum texto pôde ser extraído dos PDFs.")
     return trechos
+
+
+def _normalizar(m):
+    n = np.linalg.norm(m, axis=1, keepdims=True)
+    n[n == 0] = 1
+    return (m / n).astype(np.float32)
 
 
 def construir_indice(embeddings):
