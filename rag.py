@@ -24,6 +24,15 @@ TAM_CHUNK = 1000
 SOBREPOSICAO = 200
 K = 5
 
+ETAPA = "rag importado"
+
+
+def _etapa(texto):
+    global ETAPA
+    ETAPA = texto
+    print(f"[RAG] {texto}", flush=True)
+
+
 PADRAO_ARQUIVOS = re.compile(r"^[1-5]-.*_mei\.pdf$", re.IGNORECASE)
 
 
@@ -118,21 +127,26 @@ class Indice:
 
 
 def iniciar_rag():
+    _etapa("importando groq")
     from groq import Groq
 
-    print("[RAG] Carregando modelo de embeddings...", flush=True)
+    _etapa("carregando modelo de embeddings (fastembed)")
     embeddings = criar_embeddings()
 
-    if not (ARQ_VETORES.is_file() and ARQ_TRECHOS.is_file()):
-        print("[RAG] Índice não encontrado; criando a base (pode demorar)...", flush=True)
+    existe = ARQ_VETORES.is_file() and ARQ_TRECHOS.is_file()
+    _etapa(f"indice no disco: {'sim' if existe else 'NAO'}")
+    if not existe:
+        _etapa("criando indice a partir dos PDFs (build nao gerou)")
         construir_indice(embeddings)
 
-    print("[RAG] Carregando índice...", flush=True)
+    _etapa("carregando indice")
     vetores = np.load(ARQ_VETORES)
     trechos = json.loads(ARQ_TRECHOS.read_text(encoding="utf-8"))
     indice = Indice(embeddings, vetores, trechos)
 
+    _etapa("criando cliente Groq")
     cliente = Groq(api_key=os.environ["GROQ_API_KEY"])
+    _etapa("pronto")
     return indice, cliente
 
 

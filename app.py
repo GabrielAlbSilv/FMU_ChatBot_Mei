@@ -4,7 +4,9 @@
 - Expõe a API:  GET /api/status   e   POST /api/chat
 Para testar localmente:  python app.py   ->  http://localhost:5000
 """
+import faulthandler
 import os
+import sys
 import threading
 import time
 from collections import defaultdict, deque
@@ -20,7 +22,11 @@ TAMANHO_MAX_PERGUNTA = 1000
 LIMITE_REQUISICOES = 15      # por IP...
 JANELA_SEGUNDOS = 60         # ...a cada 60 segundos
 
-estado = {"pronto": False, "erro": None, "retriever": None, "llm": None}
+estado = {"pronto": False, "erro": None, "retriever": None, "llm": None, "etapa": "iniciando"}
+_t0 = time.time()
+
+# Se a inicialização passar de 90 s, imprime nos logs onde cada thread está parada.
+faulthandler.dump_traceback_later(90, repeat=False, file=sys.stderr)
 _acessos = defaultdict(deque)
 
 def _preparar_rag():
@@ -31,15 +37,19 @@ def _preparar_rag():
             raise RuntimeError("Variável de ambiente GROQ_API_KEY não configurada.")
 
         print("[INFO] Importando bibliotecas...", flush=True)
+        estado["etapa"] = "importando rag"
         import rag
         print(f"[INFO] Bibliotecas importadas em {time.time() - inicio:.1f}s", flush=True)
 
         estado["retriever"], estado["llm"] = rag.iniciar_rag()
         print(f"[INFO] Chatbot pronto em {time.time() - inicio:.1f}s", flush=True)
         estado["pronto"] = True
-    except Exception as erro:  # noqa: BLE001
-        estado["erro"] = str(erro)
+    except BaseException as erro:  # noqa: BLE001
+        import traceback
+
+        estado["erro"] = f"{type(erro).__name__}: {erro}"
         print(f"[ERRO] Falha ao iniciar o RAG: {erro}", flush=True)
+        traceback.print_exc()
 
 threading.Thread(target=_preparar_rag, daemon=True).start()
 
@@ -63,7 +73,14 @@ def index():
 @app.get("/api/status")
 def status():
     # Sempre 200 (serve também de health check do Render)
-    return jsonify(pronto=estado["pronto"], erro=estado["erro"])
+    modulo = sys.modules.get("rag")
+    etapa = getattr(modulo, "ETAPA", estado["etapa"])
+    return jsonify(
+        pronto=estado["pronto"],
+        erro=estado["erro"],
+        etapa=etapa,
+        segundos=int(time.time() - _t0),
+    )
 
 
 @app.post("/api/chat")
