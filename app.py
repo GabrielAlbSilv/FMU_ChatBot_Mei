@@ -3,27 +3,30 @@
 - Serve a página (static/index.html, style.css, script.js)
 - Expõe a API:  GET /api/status   e   POST /api/chat
 Para testar localmente:  python app.py   ->  http://localhost:5000
+
+IMPORTANTE: a inicialização do RAG roda em uma thread que é iniciada DENTRO do
+processo que atende as requisições (worker do gunicorn), nunca só no import.
+Threads não sobrevivem a um fork; se o app for importado no processo master
+(preload), uma thread criada no import ficaria perdida e o status ficaria
+eternamente "carregando".
 """
 # Limita threads das bibliotecas numéricas ANTES de importar numpy/onnxruntime.
-# No plano free (CPU fracionada) o OpenBLAS tenta criar uma thread por núcleo do
-# host e o import do numpy fica minutos travado.
-import os as _os
+import os
 
 for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
            "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
-    _os.environ[_v] = "1"
+    os.environ[_v] = "1"
 
 import faulthandler
 import hashlib
 import importlib.util
-import os
 import re
 import sys
 import threading
-import traceback
-from pathlib import Path
 import time
+import traceback
 from collections import defaultdict, deque
+from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
@@ -36,10 +39,16 @@ TAMANHO_MAX_PERGUNTA = 1000
 LIMITE_REQUISICOES = 15      # por IP...
 JANELA_SEGUNDOS = 60         # ...a cada 60 segundos
 
-estado = {"pronto": False, "erro": None, "retriever": None, "llm": None, "etapa": "iniciando", "rag": None}
-_t0 = time.time()
 _AQUI = Path(__file__).resolve().parent
 _ARQ_RAG = _AQUI / "rag.py"
+
+estado = {
+    "pid": None, "t0": time.time(), "thread_id": None,
+    "pronto": False, "erro": None, "etapa": "aguardando primeira requisicao",
+    "retriever": None, "llm": None, "rag": None,
+}
+_trava = threading.Lock()
+_acessos = defaultdict(deque)
 
 
 def _info_arquivo_rag():
@@ -50,7 +59,6 @@ def _info_arquivo_rag():
         return {
             "rag_no_disco": m.group(1) if m else "sem VERSAO (arquivo antigo?)",
             "rag_md5": hashlib.md5(texto.encode("utf-8")).hexdigest()[:8],
-            "rag_linhas": texto.count("\n"),
         }
     except Exception as e:  # noqa: BLE001
         return {"rag_no_disco": f"erro ao ler: {e}"}
@@ -64,12 +72,8 @@ def _carregar_modulo_rag():
     spec.loader.exec_module(modulo)
     return modulo
 
-# Se a inicialização passar de 90 s, imprime nos logs onde cada thread está parada.
-faulthandler.dump_traceback_later(90, repeat=True, file=sys.stderr)
-_acessos = defaultdict(deque)
 
 def _preparar_rag():
-    """Roda em segundo plano para o servidor abrir a porta imediatamente."""
     inicio = time.time()
     estado["thread_id"] = threading.get_ident()
     try:
@@ -87,14 +91,38 @@ def _preparar_rag():
         estado["pronto"] = True
         faulthandler.cancel_dump_traceback_later()
     except BaseException as erro:  # noqa: BLE001
-        import traceback
-
         faulthandler.cancel_dump_traceback_later()
         estado["erro"] = f"{type(erro).__name__}: {erro}"
         print(f"[ERRO] Falha ao iniciar o RAG: {erro}", flush=True)
         traceback.print_exc()
 
-threading.Thread(target=_preparar_rag, daemon=True).start()
+
+def garantir_inicializacao():
+    """Inicia o RAG UMA vez por processo (idempotente, seguro após fork)."""
+    if estado["pid"] == os.getpid():
+        return
+    with _trava:
+        if estado["pid"] == os.getpid():
+            return
+        estado.update(
+            pid=os.getpid(), t0=time.time(), thread_id=None,
+            pronto=False, erro=None, etapa="iniciando thread",
+            retriever=None, llm=None, rag=None,
+        )
+        print(f"[INFO] Iniciando RAG no processo {os.getpid()}", flush=True)
+        faulthandler.cancel_dump_traceback_later()
+        faulthandler.dump_traceback_later(120, repeat=True, file=sys.stderr)
+        threading.Thread(target=_preparar_rag, name="init-rag", daemon=True).start()
+
+
+# Se o app foi importado no master (preload), o worker recém-criado inicia o RAG.
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=garantir_inicializacao)
+
+
+@app.before_request
+def _antes_de_cada_requisicao():
+    garantir_inicializacao()
 
 
 def _excedeu_limite(ip):
@@ -116,26 +144,25 @@ def index():
 @app.get("/api/status")
 def status():
     # Sempre 200 (serve também de health check do Render)
-    pilha = None
-    if not estado["pronto"] and not estado["erro"]:
-        quadro = sys._current_frames().get(estado.get("thread_id"))
-        if quadro is not None:
-            pilha = "".join(traceback.format_stack(quadro)).splitlines()[-16:]
     modulo = sys.modules.get("rag_mei")
     etapa = getattr(modulo, "ETAPA", estado["etapa"])
-    return jsonify(
+    iniciando = not estado["pronto"] and not estado["erro"]
+    dados = dict(
         pronto=estado["pronto"],
         erro=estado["erro"],
         etapa=etapa,
-        segundos=int(time.time() - _t0),
-        rag_carregado=getattr(modulo, "VERSAO", None),
-        pilha_thread_init=pilha,
-        threads=[t.name for t in threading.enumerate()],
+        segundos=int(time.time() - estado["t0"]),
+        pid=os.getpid(),
+        thread_init_viva=any(t.name == "init-rag" for t in threading.enumerate()),
         commit=(os.getenv("RENDER_GIT_COMMIT") or "?")[:8],
         indice_no_disco=(_AQUI / "indice" / "vetores.npy").is_file(),
-        modelo_cache_no_disco=(_AQUI / "modelo_cache").is_dir(),
         **_info_arquivo_rag(),
     )
+    if iniciando:
+        quadro = sys._current_frames().get(estado.get("thread_id"))
+        if quadro is not None:
+            dados["pilha_thread_init"] = "".join(traceback.format_stack(quadro)).splitlines()[-12:]
+    return jsonify(**dados)
 
 
 @app.post("/api/chat")
@@ -165,4 +192,5 @@ def chat():
 
 
 if __name__ == "__main__":
+    garantir_inicializacao()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False)
