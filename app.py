@@ -26,7 +26,7 @@ estado = {"pronto": False, "erro": None, "retriever": None, "llm": None, "etapa"
 _t0 = time.time()
 
 # Se a inicialização passar de 90 s, imprime nos logs onde cada thread está parada.
-faulthandler.dump_traceback_later(90, repeat=False, file=sys.stderr)
+faulthandler.dump_traceback_later(90, repeat=True, file=sys.stderr)
 _acessos = defaultdict(deque)
 
 def _preparar_rag():
@@ -44,9 +44,11 @@ def _preparar_rag():
         estado["retriever"], estado["llm"] = rag.iniciar_rag()
         print(f"[INFO] Chatbot pronto em {time.time() - inicio:.1f}s", flush=True)
         estado["pronto"] = True
+        faulthandler.cancel_dump_traceback_later()
     except BaseException as erro:  # noqa: BLE001
         import traceback
 
+        faulthandler.cancel_dump_traceback_later()
         estado["erro"] = f"{type(erro).__name__}: {erro}"
         print(f"[ERRO] Falha ao iniciar o RAG: {erro}", flush=True)
         traceback.print_exc()
@@ -79,6 +81,7 @@ def status():
         pronto=estado["pronto"],
         erro=estado["erro"],
         etapa=etapa,
+        rag_versao=getattr(modulo, "VERSAO", "ANTIGO ou ainda nao carregado"),
         segundos=int(time.time() - _t0),
     )
 

@@ -10,7 +10,20 @@ import os
 import re
 from pathlib import Path
 
-import numpy as np
+VERSAO = "rag-leve-v2"
+ETAPA = "rag.py novo carregando"
+
+
+def _etapa(texto):
+    global ETAPA
+    ETAPA = texto
+    print(f"[RAG] {texto}", flush=True)
+
+
+_etapa("importando numpy")
+import numpy as np  # noqa: E402
+
+_etapa("rag importado")
 
 PASTA_PROJETO = Path(__file__).resolve().parent
 PASTA_INDICE = PASTA_PROJETO / "indice"
@@ -23,15 +36,6 @@ MODELO_LLM = "openai/gpt-oss-120b"
 TAM_CHUNK = 1000
 SOBREPOSICAO = 200
 K = 5
-
-ETAPA = "rag importado"
-
-
-def _etapa(texto):
-    global ETAPA
-    ETAPA = texto
-    print(f"[RAG] {texto}", flush=True)
-
 
 PADRAO_ARQUIVOS = re.compile(r"^[1-5]-.*_mei\.pdf$", re.IGNORECASE)
 
