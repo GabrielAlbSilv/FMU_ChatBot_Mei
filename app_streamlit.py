@@ -321,14 +321,15 @@ if pergunta := st.chat_input("Digite sua pergunta..."):
 
                 # Monta as instruções enviadas ao modelo de linguagem
                 prompt = f"""
-                Você é um assistente especializado em Microempreendedor Individual (MEI).
+                Você é um assistente especializado em Microempreendedor Individual (MEI) e Cartilhas de 
+                Imposto de Renda.
 
                 Responda utilizando apenas as informações
-                dos documentos do MEI fornecidos abaixo.
+                dos documentos fornecidos abaixo.
                 Não utilize conhecimento externo.
 
                 Se não encontrar a resposta, informe que
-                a informação não foi localizada nos documentos do MEI.
+                a informação não foi localizada nos documentos.
 
                 Contexto:
                 {contexto}
