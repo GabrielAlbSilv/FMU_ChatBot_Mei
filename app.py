@@ -20,6 +20,7 @@ import os
 import re
 import sys
 import threading
+import traceback
 from pathlib import Path
 import time
 from collections import defaultdict, deque
@@ -70,6 +71,7 @@ _acessos = defaultdict(deque)
 def _preparar_rag():
     """Roda em segundo plano para o servidor abrir a porta imediatamente."""
     inicio = time.time()
+    estado["thread_id"] = threading.get_ident()
     try:
         if not os.getenv("GROQ_API_KEY"):
             raise RuntimeError("Variável de ambiente GROQ_API_KEY não configurada.")
@@ -114,6 +116,11 @@ def index():
 @app.get("/api/status")
 def status():
     # Sempre 200 (serve também de health check do Render)
+    pilha = None
+    if not estado["pronto"] and not estado["erro"]:
+        quadro = sys._current_frames().get(estado.get("thread_id"))
+        if quadro is not None:
+            pilha = "".join(traceback.format_stack(quadro)).splitlines()[-16:]
     modulo = sys.modules.get("rag_mei")
     etapa = getattr(modulo, "ETAPA", estado["etapa"])
     return jsonify(
@@ -122,6 +129,8 @@ def status():
         etapa=etapa,
         segundos=int(time.time() - _t0),
         rag_carregado=getattr(modulo, "VERSAO", None),
+        pilha_thread_init=pilha,
+        threads=[t.name for t in threading.enumerate()],
         commit=(os.getenv("RENDER_GIT_COMMIT") or "?")[:8],
         indice_no_disco=(_AQUI / "indice" / "vetores.npy").is_file(),
         modelo_cache_no_disco=(_AQUI / "modelo_cache").is_dir(),
