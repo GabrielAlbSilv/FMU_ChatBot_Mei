@@ -5,9 +5,13 @@
 Para testar localmente:  python app.py   ->  http://localhost:5000
 """
 import faulthandler
+import hashlib
+import importlib.util
 import os
+import re
 import sys
 import threading
+from pathlib import Path
 import time
 from collections import defaultdict, deque
 
@@ -22,8 +26,33 @@ TAMANHO_MAX_PERGUNTA = 1000
 LIMITE_REQUISICOES = 15      # por IP...
 JANELA_SEGUNDOS = 60         # ...a cada 60 segundos
 
-estado = {"pronto": False, "erro": None, "retriever": None, "llm": None, "etapa": "iniciando"}
+estado = {"pronto": False, "erro": None, "retriever": None, "llm": None, "etapa": "iniciando", "rag": None}
 _t0 = time.time()
+_AQUI = Path(__file__).resolve().parent
+_ARQ_RAG = _AQUI / "rag.py"
+
+
+def _info_arquivo_rag():
+    """Lê o rag.py que está NO DISCO do servidor (sem importar)."""
+    try:
+        texto = _ARQ_RAG.read_text(encoding="utf-8")
+        m = re.search(r'VERSAO\s*=\s*"([^"]+)"', texto)
+        return {
+            "rag_no_disco": m.group(1) if m else "sem VERSAO (arquivo antigo?)",
+            "rag_md5": hashlib.md5(texto.encode("utf-8")).hexdigest()[:8],
+            "rag_linhas": texto.count("\n"),
+        }
+    except Exception as e:  # noqa: BLE001
+        return {"rag_no_disco": f"erro ao ler: {e}"}
+
+
+def _carregar_modulo_rag():
+    """Carrega rag.py por caminho, evitando qualquer conflito de import."""
+    spec = importlib.util.spec_from_file_location("rag_mei", _ARQ_RAG)
+    modulo = importlib.util.module_from_spec(spec)
+    sys.modules["rag_mei"] = modulo
+    spec.loader.exec_module(modulo)
+    return modulo
 
 # Se a inicialização passar de 90 s, imprime nos logs onde cada thread está parada.
 faulthandler.dump_traceback_later(90, repeat=True, file=sys.stderr)
@@ -37,8 +66,9 @@ def _preparar_rag():
             raise RuntimeError("Variável de ambiente GROQ_API_KEY não configurada.")
 
         print("[INFO] Importando bibliotecas...", flush=True)
-        estado["etapa"] = "importando rag"
-        import rag
+        estado["etapa"] = "executando rag.py"
+        rag = _carregar_modulo_rag()
+        estado["rag"] = rag
         print(f"[INFO] Bibliotecas importadas em {time.time() - inicio:.1f}s", flush=True)
 
         estado["retriever"], estado["llm"] = rag.iniciar_rag()
@@ -75,14 +105,18 @@ def index():
 @app.get("/api/status")
 def status():
     # Sempre 200 (serve também de health check do Render)
-    modulo = sys.modules.get("rag")
+    modulo = sys.modules.get("rag_mei")
     etapa = getattr(modulo, "ETAPA", estado["etapa"])
     return jsonify(
         pronto=estado["pronto"],
         erro=estado["erro"],
         etapa=etapa,
-        rag_versao=getattr(modulo, "VERSAO", "ANTIGO ou ainda nao carregado"),
         segundos=int(time.time() - _t0),
+        rag_carregado=getattr(modulo, "VERSAO", None),
+        commit=(os.getenv("RENDER_GIT_COMMIT") or "?")[:8],
+        indice_no_disco=(_AQUI / "indice" / "vetores.npy").is_file(),
+        modelo_cache_no_disco=(_AQUI / "modelo_cache").is_dir(),
+        **_info_arquivo_rag(),
     )
 
 
@@ -105,9 +139,7 @@ def chat():
         return jsonify(erro=f"A pergunta deve ter até {TAMANHO_MAX_PERGUNTA} caracteres."), 400
 
     try:
-        import rag
-
-        resposta, fontes = rag.responder(estado["retriever"], estado["llm"], pergunta)
+        resposta, fontes = estado["rag"].responder(estado["retriever"], estado["llm"], pergunta)
         return jsonify(resposta=resposta, fontes=fontes)
     except Exception as erro:  # noqa: BLE001
         print(f"[ERRO] Ao responder: {erro}", flush=True)

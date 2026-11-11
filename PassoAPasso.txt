@@ -18,4 +18,5 @@
 python -m pip install -r requirements.txt
 
 7.Para testar a execução do app.py:
-python -m streamlit run app.py (O Streamlit abrirá a aplicação no navegador, normalmente em http://localhost:8501) 
+python -m streamlit run app.py 
+(O Streamlit abrirá a aplicação no navegador, normalmente em http://localhost:8501) 
