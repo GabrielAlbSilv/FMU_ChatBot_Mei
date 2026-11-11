@@ -17,7 +17,11 @@ function esconderTelaCarregando() {
 
 function atualizarMensagemCarregando() {
   const segundos = (Date.now() - inicioCarregamento) / 1000;
-  if (segundos > 40) {
+  if (segundos > 240) {
+    telaCarregando.classList.add("falhou");
+    telaCarregando.querySelector("h2").textContent = "Demorando mais que o normal";
+    msgCarregando.textContent = "O servidor não terminou de iniciar. Recarregue a página em instantes ou verifique os logs no Render.";
+  } else if (segundos > 40) {
     msgCarregando.textContent = "Quase lá… o servidor gratuito demora um pouco para acordar.";
   } else if (segundos > 10) {
     msgCarregando.textContent = "Carregando os documentos sobre MEI…";

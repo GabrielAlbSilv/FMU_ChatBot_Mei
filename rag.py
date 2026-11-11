@@ -1,119 +1,139 @@
-"""Lógica RAG do Chatbot MEI.
+"""Lógica RAG do Chatbot MEI (versão leve).
 
-O índice vetorial é gerado durante o build do Render por construir_indice.py.
-Na inicialização do servidor, apenas carregamos o índice persistido.
+- Embeddings: fastembed (ONNX) direto, sem LangChain/Chroma
+- Índice: arrays numpy salvos em disco (pasta indice/), gerados no build
+- LLM: SDK oficial da Groq
+Na inicialização do servidor apenas carregamos o índice (segundos, pouca RAM).
 """
+import json
 import os
 import re
-import shutil
-
 from pathlib import Path
 
-PASTA_PROJETO = Path(__file__).resolve().parent
-PASTA_BANCO = PASTA_PROJETO / "chroma_db"
-PASTA_MODELO = PASTA_PROJETO / "modelo_cache"
-NOME_COLECAO = "mei_documentos"
+import numpy as np
 
-# Mantém o padrão dos cinco documentos oficiais utilizados pelo projeto.
+PASTA_PROJETO = Path(__file__).resolve().parent
+PASTA_INDICE = PASTA_PROJETO / "indice"
+PASTA_MODELO = PASTA_PROJETO / "modelo_cache"
+ARQ_VETORES = PASTA_INDICE / "vetores.npy"
+ARQ_TRECHOS = PASTA_INDICE / "trechos.json"
+
+NOME_MODELO_EMB = "sentence-transformers/all-MiniLM-L6-v2"
+MODELO_LLM = "openai/gpt-oss-120b"
+TAM_CHUNK = 1000
+SOBREPOSICAO = 200
+K = 5
+
 PADRAO_ARQUIVOS = re.compile(r"^[1-5]-.*_mei\.pdf$", re.IGNORECASE)
 
 
 def listar_pdfs():
-    """Localiza e ordena os PDFs do MEI na raiz do projeto."""
     return sorted(
-        arquivo
-        for arquivo in PASTA_PROJETO.iterdir()
-        if arquivo.is_file() and PADRAO_ARQUIVOS.match(arquivo.name)
+        a for a in PASTA_PROJETO.iterdir()
+        if a.is_file() and PADRAO_ARQUIVOS.match(a.name)
     )
 
 
 def criar_embeddings():
-    """Cria o modelo leve ONNX e reutiliza o cache baixado no build."""
-    from langchain_community.embeddings import FastEmbedEmbeddings
+    from fastembed import TextEmbedding
 
-    return FastEmbedEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
+    return TextEmbedding(
+        model_name=NOME_MODELO_EMB,
         cache_dir=str(PASTA_MODELO),
         threads=2,
-        doc_embed_type="passage",
-        query_embed_type="query",
     )
+
+
+def _dividir(texto):
+    """Divide o texto em trechos de ~TAM_CHUNK caracteres com sobreposição."""
+    texto = re.sub(r"[ \t]+", " ", texto).strip()
+    trechos, inicio = [], 0
+    while inicio < len(texto):
+        fim = min(inicio + TAM_CHUNK, len(texto))
+        if fim < len(texto):
+            corte = texto.rfind(" ", inicio + TAM_CHUNK // 2, fim)
+            if corte != -1:
+                fim = corte
+        trecho = texto[inicio:fim].strip()
+        if len(trecho) > 50:
+            trechos.append(trecho)
+        if fim >= len(texto):
+            break
+        inicio = max(fim - SOBREPOSICAO, inicio + 1)
+    return trechos
+
+
+def _normalizar(m):
+    n = np.linalg.norm(m, axis=1, keepdims=True)
+    n[n == 0] = 1
+    return (m / n).astype(np.float32)
 
 
 def construir_indice(embeddings):
-    """Lê os PDFs, gera os chunks e grava o índice vetorial em disco."""
-    from langchain_community.document_loaders import PyPDFLoader
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-    from langchain_chroma import Chroma
+    from pypdf import PdfReader
 
     arquivos = listar_pdfs()
     if not arquivos:
-        raise FileNotFoundError(
-            "Nenhum PDF MEI encontrado na raiz do projeto. "
-            "Esperado: arquivos de 1 a 5 terminando em '_MEI.pdf'."
-        )
+        raise FileNotFoundError("Nenhum PDF MEI (1 a 5, terminando em _MEI.pdf) na raiz do projeto.")
 
-    documentos = []
+    trechos = []
     for arquivo in arquivos:
         print(f"[INDEX] Lendo {arquivo.name}...", flush=True)
-        paginas = PyPDFLoader(str(arquivo)).load()
-        for pagina in paginas:
-            pagina.metadata["fonte"] = arquivo.name
-        documentos.extend(paginas)
+        leitor = PdfReader(str(arquivo))
+        for num, pagina in enumerate(leitor.pages, start=1):
+            texto = pagina.extract_text() or ""
+            for t in _dividir(texto):
+                trechos.append({"fonte": arquivo.name, "pagina": num, "texto": t})
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
-    )
-    chunks = splitter.split_documents(documentos)
+    if not trechos:
+        raise RuntimeError("Nenhum texto pôde ser extraído dos PDFs.")
+    print(f"[INDEX] {len(trechos)} trechos preparados. Gerando embeddings...", flush=True)
 
-    if not chunks:
-        raise RuntimeError(
-            "Os PDFs foram encontrados, mas nenhum texto pôde ser extraído."
-        )
+    vetores = []
+    lote = 64
+    for i in range(0, len(trechos), lote):
+        parte = [t["texto"] for t in trechos[i:i + lote]]
+        vetores.extend(list(embeddings.passage_embed(parte)))
+        print(f"[INDEX] {min(i + lote, len(trechos))}/{len(trechos)}", flush=True)
 
-    print(f"[INDEX] {len(chunks)} trechos preparados.", flush=True)
+    matriz = _normalizar(np.array(vetores, dtype=np.float32))
+    PASTA_INDICE.mkdir(exist_ok=True)
+    np.save(ARQ_VETORES, matriz)
+    ARQ_TRECHOS.write_text(json.dumps(trechos, ensure_ascii=False), encoding="utf-8")
+    print("[INDEX] Índice criado com sucesso.", flush=True)
 
-    # Evita misturar dados de uma versão anterior dos documentos.
-    if PASTA_BANCO.exists():
-        shutil.rmtree(PASTA_BANCO)
 
-    banco = Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        collection_name=NOME_COLECAO,
-        persist_directory=str(PASTA_BANCO),
-    )
+class Indice:
+    def __init__(self, embeddings, vetores, trechos):
+        self.embeddings = embeddings
+        self.vetores = vetores
+        self.trechos = trechos
 
-    print("[INDEX] Banco vetorial criado com sucesso.", flush=True)
-    return banco
+    def buscar(self, pergunta, k=K):
+        q = np.array(list(self.embeddings.query_embed([pergunta])), dtype=np.float32)
+        q = _normalizar(q)[0]
+        pontos = self.vetores @ q
+        melhores = np.argsort(-pontos)[:k]
+        return [self.trechos[i] for i in melhores]
 
 
 def iniciar_rag():
-    """Carrega o índice persistido e configura o modelo de linguagem."""
-    from langchain_chroma import Chroma
-    from langchain_groq import ChatGroq
+    from groq import Groq
 
+    print("[RAG] Carregando modelo de embeddings...", flush=True)
     embeddings = criar_embeddings()
 
-    # Fallback útil para execução local ou caso o build não tenha criado o índice.
-    if not PASTA_BANCO.is_dir() or not any(PASTA_BANCO.iterdir()):
-        print("[RAG] Índice não encontrado; criando a base...", flush=True)
-        banco = construir_indice(embeddings)
-    else:
-        print("[RAG] Carregando índice vetorial persistido...", flush=True)
-        banco = Chroma(
-            collection_name=NOME_COLECAO,
-            persist_directory=str(PASTA_BANCO),
-            embedding_function=embeddings,
-        )
+    if not (ARQ_VETORES.is_file() and ARQ_TRECHOS.is_file()):
+        print("[RAG] Índice não encontrado; criando a base (pode demorar)...", flush=True)
+        construir_indice(embeddings)
 
-    retriever = banco.as_retriever(search_kwargs={"k": 5})
-    llm = ChatGroq(
-        model="openai/gpt-oss-120b",
-        temperature=0,
-    )
-    return retriever, llm
+    print("[RAG] Carregando índice...", flush=True)
+    vetores = np.load(ARQ_VETORES)
+    trechos = json.loads(ARQ_TRECHOS.read_text(encoding="utf-8"))
+    indice = Indice(embeddings, vetores, trechos)
+
+    cliente = Groq(api_key=os.environ["GROQ_API_KEY"])
+    return indice, cliente
 
 
 def montar_prompt(contexto, pergunta):
@@ -135,17 +155,14 @@ Pergunta:
 """
 
 
-def responder(retriever, llm, pergunta):
-    """Recupera os trechos relevantes e gera a resposta com indicação das fontes."""
-    documentos = retriever.invoke(pergunta)
-    contexto = "\n\n".join(
-        f"[Fonte: {documento.metadata.get('fonte', 'desconhecida')}]\n"
-        f"{documento.page_content}"
-        for documento in documentos
+def responder(indice, cliente, pergunta):
+    trechos = indice.buscar(pergunta)
+    contexto = "\n\n".join(f"[Fonte: {t['fonte']}]\n{t['texto']}" for t in trechos)
+    r = cliente.chat.completions.create(
+        model=MODELO_LLM,
+        temperature=0,
+        messages=[{"role": "user", "content": montar_prompt(contexto, pergunta)}],
     )
-    resposta = llm.invoke(montar_prompt(contexto, pergunta)).content
-    fontes = sorted({
-        documento.metadata.get("fonte", "desconhecida")
-        for documento in documentos
-    })
+    resposta = r.choices[0].message.content
+    fontes = sorted({t["fonte"] for t in trechos})
     return resposta, fontes
