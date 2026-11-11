@@ -5,12 +5,21 @@
 - LLM: SDK oficial da Groq
 Na inicialização do servidor apenas carregamos o índice (segundos, pouca RAM).
 """
+# Limita threads das bibliotecas numéricas ANTES de importar numpy/onnxruntime.
+# No plano free (CPU fracionada) o OpenBLAS tenta criar uma thread por núcleo do
+# host e o import do numpy fica minutos travado.
+import os as _os
+
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    _os.environ[_v] = "1"
+
 import json
 import os
 import re
 from pathlib import Path
 
-VERSAO = "rag-leve-v2"
+VERSAO = "rag-leve-v3"
 ETAPA = "rag.py novo carregando"
 
 

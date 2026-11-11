@@ -4,6 +4,15 @@
 - Expõe a API:  GET /api/status   e   POST /api/chat
 Para testar localmente:  python app.py   ->  http://localhost:5000
 """
+# Limita threads das bibliotecas numéricas ANTES de importar numpy/onnxruntime.
+# No plano free (CPU fracionada) o OpenBLAS tenta criar uma thread por núcleo do
+# host e o import do numpy fica minutos travado.
+import os as _os
+
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    _os.environ[_v] = "1"
+
 import faulthandler
 import hashlib
 import importlib.util

@@ -3,11 +3,15 @@ services:
     name: chatbot-mei
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt && python construir_indice.py
+    buildCommand: pip install -r requirements.txt && python preparar_base.py
     startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120
     healthCheckPath: /api/status
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: OMP_NUM_THREADS
+        value: "1"
       - key: GROQ_API_KEY
         sync: false
