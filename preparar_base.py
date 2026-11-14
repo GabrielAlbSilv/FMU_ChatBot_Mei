@@ -1,5 +1,9 @@
-"""Compatibilidade: utiliza o mesmo processo de construção do índice do Render."""
-from construir_indice import rag
+"""Gera o índice de busca (trechos + embeddings) a partir dos PDFs.
+
+Roda no build do Render (ver render.yaml) para que o servidor não precise
+processar os PDFs a cada inicialização. Localmente:  python preparar_base.py
+"""
+import rag
 
 
 if __name__ == "__main__":

@@ -1,22 +1,25 @@
-1.Crie a pasta do projeto
+1. Crie a pasta do projeto e coloque nela os arquivos (incluindo os PDFs numerados, ex.: 1-Cartilha_MEI.pdf)
 
-2.Abra o vscode e abra a pasta do projeto dentro do vscode
-		2.1 Instale o Phyton, comando:
+2. Abra a pasta do projeto no VS Code
+		2.1 Instale o Python, comando:
 			winget install 9NQ7512CXL7T -e --accept-source-agreements --accept-package-agreements --disable-interactivity
 
-3.Crie os arquivos app.py, requirements.txt e .env
-		1: EM .env GERE O COMANDO GROQ_API_KEY="ChaveApiAqui"
+3. Crie o arquivo .env (use o .env.example como modelo):
+		GROQ_API_KEY="ChaveApiAqui"
 
-4.No arquivo requirements coloque os arquivos que deverão ser instalados
+4. Abra o terminal (ctrl '), crie e ative um ambiente virtual:
+		1: python -m venv venv
+		2: .\venv\Scripts\Activate.ps1 (após a ativação, deverá aparecer (venv) no início da linha do terminal)
+		3: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass (se o Windows não permitir a ativação)
 
-5.Abra o terminal (ctrl ‘), crie e ative um ambiente virtual para instalar as bibliotecas:
-		1:   python -m venv venv
-                2:   .\venv\Scripts\Activate.ps1 (Após a ativação, deverá aparecer (venv) no início da linha do terminal)
-	        3:   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass  (Se o windows não permitir a instalação)
+5. Instale as bibliotecas:
+		python -m pip install -r requirements.txt
 
-6.Instalar as bibliotecas (requirements):
-python -m pip install -r requirements.txt
+6. (Opcional) Gere o índice dos PDFs antes de iniciar. Se pular, ele é gerado na primeira execução:
+		python preparar_base.py
 
-7.Para testar a execução do app.py:
-python -m streamlit run app.py 
-(O Streamlit abrirá a aplicação no navegador, normalmente em http://localhost:8501) 
+7. Inicie o servidor:
+		python app.py
+	Abra no navegador: http://localhost:5000  (página inicial)  e  http://localhost:5000/chat  (chat)
+
+8. Logo da FMU: fica em static/logo-fmu.png (imagem com fundo transparente).

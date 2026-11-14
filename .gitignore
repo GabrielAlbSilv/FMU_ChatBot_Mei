@@ -1,60 +1,35 @@
-# Environment variables and secrets
+# Variáveis de ambiente e segredos
 .env
 .env.*
 !.env.example
 
-# Python cache files
+# Cache do Python
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual environments
+# Ambientes virtuais
 venv/
 .venv/
 env/
 ENV/
 
-# Python packaging
-build/
-dist/
-*.egg-info/
-.eggs/
+# Índice de busca (gerado por preparar_base.py no build)
+indice/
 
-# Streamlit
-.streamlit/secrets.toml
-
-# Jupyter Notebook
-.ipynb_checkpoints/
-
-# ChromaDB / Vector database
-chroma/
-chroma_db/
-*.sqlite3
-*.sqlite3-shm
-*.sqlite3-wal
-
-# Hugging Face cache
+# Cache do modelo de embeddings (baixado no build)
+modelo_cache/
+.fastembed_cache/
 .cache/
-cache/
-huggingface_cache/
 
 # Logs
 *.log
 
-# Operating system files
+# Arquivos do sistema operacional
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# IDEs and editors
+# IDEs e editores
 .vscode/
 .idea/
-
-# Testing and coverage
-.pytest_cache/
-.coverage
-htmlcov/
-
-# FastEmbed model cache (downloaded during Render build)
-modelo_cache/
-.fastembed_cache/

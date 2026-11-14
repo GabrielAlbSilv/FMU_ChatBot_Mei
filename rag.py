@@ -8,15 +8,14 @@ Na inicialização do servidor apenas carregamos o índice (segundos, pouca RAM)
 # Limita threads das bibliotecas numéricas ANTES de importar numpy/onnxruntime.
 # No plano free (CPU fracionada) o OpenBLAS tenta criar uma thread por núcleo do
 # host e o import do numpy fica minutos travado.
-import os as _os
+import os
 
 for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
            "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
-    _os.environ[_v] = "1"
+    os.environ[_v] = "1"
 
 import json
 import math
-import os
 import re
 import unicodedata
 from collections import Counter, defaultdict
@@ -277,9 +276,6 @@ class Indice:
             semantico = self.vetores @ _normalizar(q)[0]
             placar = placar + peso_semantico / (60 + _ranking(semantico))
         return placar
-
-    def buscar(self, pergunta, k=K):
-        return self.buscar_varias([pergunta], k)
 
     def buscar_varias(self, consultas, k=K):
         """Funde (RRF) os rankings de várias formulações da mesma dúvida.
