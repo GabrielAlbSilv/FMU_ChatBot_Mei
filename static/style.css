@@ -60,7 +60,15 @@ img { max-width: 100%; display: block; }
 
 /* ---------- Logo FMU (canto de cada página) ---------- */
 .marca-fmu { display: inline-flex; align-items: center; flex-shrink: 0; }
-.marca-fmu img { height: 34px; width: auto; }
+/* logo-fmu.png é preta com fundo transparente (proporção ~1,55:1) */
+.marca-fmu img {
+  height: 44px; width: auto; max-width: none; aspect-ratio: 378 / 240;
+  object-fit: contain; user-select: none;
+}
+.rodape-site .marca-fmu img { height: 52px; }
+@media (prefers-color-scheme: dark) {
+  .marca-fmu img { filter: invert(1); }   /* vira branca no tema escuro */
+}
 .fmu-texto {
   display: inline-grid; place-items: center;
   height: 32px; padding: 0 10px; border-radius: 8px;
@@ -106,7 +114,9 @@ img { max-width: 100%; display: block; }
   border-bottom: 1px solid var(--borda);
 }
 .cabecalho .container { display: flex; align-items: center; gap: 16px; height: 68px; }
-.marca { display: flex; align-items: center; gap: 10px; color: var(--texto); text-decoration: none; font-weight: 700; font-size: 18px; }
+.marca { display: flex; align-items: center; gap: 10px; color: var(--texto); text-decoration: none; font-weight: 700; font-size: 18px; white-space: nowrap; flex-shrink: 0; }
+.cabecalho nav a { white-space: nowrap; }
+@media (max-width: 860px) { .cabecalho nav a.link { display: none; } }
 .marca img { width: 36px; height: 36px; }
 .cabecalho nav { margin-left: auto; display: flex; align-items: center; gap: 18px; }
 .cabecalho nav a.link { color: var(--suave); text-decoration: none; font-size: 15px; }
@@ -217,6 +227,7 @@ img { max-width: 100%; display: block; }
   .cabecalho .container { height: 60px; }
   .cabecalho nav a.link, .cabecalho nav .botao { display: none; }
   .marca span { font-size: 16px; }
+  .cabecalho .marca-fmu img { height: 38px; }
   .secao { padding: 52px 0; }
   .grade, .documentos { grid-template-columns: 1fr; }
   .hero .acoes .botao { width: 100%; }
@@ -252,6 +263,7 @@ body.pagina-chat {
 .voltar:hover { background: var(--bot); color: var(--vermelho); }
 .voltar svg { width: 22px; height: 22px; }
 .avatar { width: 42px; height: 42px; flex-shrink: 0; }
+.topo .marca-fmu img { height: 40px; }
 .topo-info { min-width: 0; }
 .topo h1 { font-size: 17px; margin: 0; line-height: 1.2; }
 .topo .pilula-status { font-size: 12.5px; }
@@ -345,7 +357,7 @@ body.pagina-chat {
   .topo { padding-left: 8px; padding-right: 10px; gap: 8px; }
   .avatar { width: 36px; height: 36px; }
   .topo h1 { font-size: 16px; }
-  .marca-fmu img { height: 28px; }
+  .topo .marca-fmu img { height: 34px; }
   .fmu-texto { height: 28px; font-size: 13px; padding: 0 8px; }
   .mensagens { padding: 16px 12px; }
   .sugestoes { grid-template-columns: 1fr; }
