@@ -30,6 +30,9 @@ function atualizarMensagemCarregando() {
 
 let pronto = false;
 let enviando = false;
+// Memória da conversa: o bot entende perguntas de continuação ("e quanto custa?")
+const historico = [];
+const MAX_HISTORICO = 6;
 
 /* ---------- utilidades ---------- */
 function escapar(texto) {
@@ -46,6 +49,8 @@ function markdownSimples(texto) {
   const fechar = () => { if (lista) { html += `</${lista}>`; lista = null; } };
 
   for (const linha of linhas) {
+    const titulo = linha.match(/^\s*#{1,6}\s+(.*)/);
+    if (titulo) { fechar(); html += `<p><strong>${inline(titulo[1])}</strong></p>`; continue; }
     const ul = linha.match(/^\s*[-*•]\s+(.*)/);
     const ol = linha.match(/^\s*\d+[.)]\s+(.*)/);
     if (ul || ol) {
@@ -130,7 +135,7 @@ async function enviarPergunta(pergunta) {
     const r = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pergunta }),
+      body: JSON.stringify({ pergunta, historico: historico.slice(-MAX_HISTORICO) }),
     });
     const d = await r.json().catch(() => ({}));
     digitando.remove();
@@ -138,6 +143,7 @@ async function enviarPergunta(pergunta) {
     if (!r.ok) {
       adicionarMensagem("bot", `<p>${escapar(d.erro || "Erro inesperado.")}</p>`, "erro-msg");
     } else {
+      historico.push({ papel: "user", texto: pergunta }, { papel: "assistant", texto: d.resposta });
       let html = markdownSimples(d.resposta);
       if (d.fontes && d.fontes.length) {
         html += `<div class="fontes">Fontes: ${d.fontes.map(escapar).join(", ")}</div>`;

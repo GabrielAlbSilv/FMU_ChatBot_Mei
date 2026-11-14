@@ -193,8 +193,14 @@ def chat():
     if len(pergunta) > TAMANHO_MAX_PERGUNTA:
         return jsonify(erro=f"A pergunta deve ter até {TAMANHO_MAX_PERGUNTA} caracteres."), 400
 
+    historico = dados.get("historico")
+    if not isinstance(historico, list):
+        historico = []
+    historico = historico[-20:]   # o rag.py ainda limita e valida cada mensagem
+
     try:
-        resposta, fontes = estado["rag"].responder(estado["retriever"], estado["llm"], pergunta)
+        resposta, fontes = estado["rag"].responder(
+            estado["retriever"], estado["llm"], pergunta, historico)
         return jsonify(resposta=resposta, fontes=fontes)
     except Exception as erro:  # noqa: BLE001
         print(f"[ERRO] Ao responder: {erro}", flush=True)
