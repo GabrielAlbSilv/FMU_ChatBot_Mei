@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#c8102e">
+  <title>Chat — Chatbot MEI</title>
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="pagina-chat">
+
+  <!-- ============ Carregamento com barra de progresso ============ -->
+  <div id="tela-carregando" class="tela-carregando">
+    <div class="carregando-cartao">
+      <img class="avatar-grande" src="icon.svg" alt="">
+      <h2 id="carregando-titulo">Preparando o Chatbot MEI</h2>
+      <p id="carregando-msg" class="msg-carregando">Na primeira visita isso pode levar até 1 minuto.</p>
+
+      <div class="progresso-linha">
+        <span id="etapa-atual">Conectando ao servidor</span>
+        <strong id="progresso-pct">0%</strong>
+      </div>
+      <div id="barra" class="barra" role="progressbar" aria-label="Progresso do carregamento"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="barra-preenchida" class="barra-preenchida"></div>
+      </div>
+
+      <ol id="etapas" class="etapas">
+        <li>Conectando ao servidor</li>
+        <li>Carregando bibliotecas</li>
+        <li>Carregando modelo de busca</li>
+        <li>Carregando documentos sobre MEI</li>
+        <li>Conectando à inteligência artificial</li>
+      </ol>
+
+      <button type="button" class="botao botao-primario" onclick="location.reload()">Tentar novamente</button>
+    </div>
+  </div>
+
+  <main class="app">
+    <header class="topo">
+      <a class="voltar" href="/" aria-label="Voltar para a página inicial" title="Página inicial">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </a>
+      <img class="avatar" src="icon.svg" alt="">
+      <div class="topo-info">
+        <h1>Chatbot MEI</h1>
+        <span id="status" class="pilula-status">Preparando…</span>
+      </div>
+      <div class="topo-acoes">
+        <button id="nova-conversa" type="button" class="icone-botao" title="Nova conversa" aria-label="Nova conversa" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+        </button>
+        <span class="marca-fmu"><img src="logo-fmu.png" alt="FMU" onerror="this.outerHTML='<span class=&quot;fmu-texto&quot; role=&quot;img&quot; aria-label=&quot;FMU&quot;>FMU</span>'"></span>
+      </div>
+    </header>
+
+    <section id="mensagens" class="mensagens" aria-live="polite" aria-label="Conversa"></section>
+
+    <template id="modelo-boas-vindas">
+      <div class="boas-vindas">
+        <img src="icon.svg" alt="">
+        <h2>Olá! Como posso ajudar?</h2>
+        <p>Pergunte sobre abertura do MEI, impostos (DAS), declaração anual, limites de faturamento, empregados, benefícios e mais.</p>
+      </div>
+      <div id="sugestoes" class="sugestoes">
+        <button type="button" data-pergunta="Quem pode ser MEI?">Quem pode ser MEI?<span>Requisitos e atividades</span></button>
+        <button type="button" data-pergunta="Quanto o MEI paga de imposto por mês?">Quanto o MEI paga por mês?<span>O boleto DAS</span></button>
+        <button type="button" data-pergunta="Qual o limite de faturamento anual do MEI?">Qual o limite de faturamento?<span>E se eu ultrapassar</span></button>
+        <button type="button" data-pergunta="O que você sabe fazer?">O que você sabe fazer?<span>Conheça o assistente</span></button>
+      </div>
+    </template>
+
+    <div class="entrada-area">
+      <form id="formulario" class="entrada" autocomplete="off">
+        <label for="pergunta" class="sr-only">Sua pergunta</label>
+        <textarea id="pergunta" rows="1" maxlength="1000" enterkeyhint="send"
+                  placeholder="Digite sua pergunta sobre MEI…"></textarea>
+        <button id="enviar" type="submit" aria-label="Enviar pergunta" title="Enviar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+      </form>
+      <p class="aviso">Respostas geradas por IA com base em documentos sobre MEI. Podem conter erros: confirme no Portal do Empreendedor.</p>
+    </div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

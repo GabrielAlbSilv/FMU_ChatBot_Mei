@@ -2,58 +2,242 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#c8102e">
+  <meta name="description" content="Assistente virtual que tira dúvidas sobre o Microempreendedor Individual (MEI): abertura, impostos, DAS, declaração anual, limites e benefícios.">
   <title>Chatbot MEI</title>
-  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <div id="tela-carregando" class="tela-carregando" role="status" aria-live="polite">
-    <div class="carregando-conteudo">
-      <div class="spinner" aria-hidden="true"></div>
-      <h2>Preparando o Chatbot MEI</h2>
-      <p id="carregando-msg">Estamos iniciando o servidor. Na primeira visita isso pode levar até 1 minuto.</p>
+  <header class="cabecalho">
+    <div class="container">
+      <a class="marca" href="/" aria-label="Chatbot MEI — início">
+        <img src="icon.svg" alt="">
+        <span>Chatbot MEI</span>
+      </a>
+      <nav aria-label="Principal">
+        <a class="link" href="#sobre">Sobre o MEI</a>
+        <a class="link" href="#recursos">O que ele responde</a>
+        <a class="link" href="#como-funciona">Como funciona</a>
+        <a class="botao botao-primario botao-pequeno" href="/chat">Abrir chat</a>
+        <span class="marca-fmu"><img src="logo-fmu.png" alt="FMU" onerror="this.outerHTML='<span class=&quot;fmu-texto&quot; role=&quot;img&quot; aria-label=&quot;FMU&quot;>FMU</span>'"></span>
+      </nav>
     </div>
-  </div>
+  </header>
 
-  <main class="app">
-    <header class="topo">
-      <div class="logo" aria-hidden="true">M</div>
-      <div>
-        <h1>Chatbot MEI</h1>
-        <p>Tire dúvidas sobre o Microempreendedor Individual</p>
-      </div>
-      <span id="status" class="status carregando" title="Estado do chatbot">Preparando…</span>
-    </header>
-
-    <section id="mensagens" class="mensagens" aria-live="polite">
-      <div class="msg bot">
-        <div class="balao">
-          Olá! Sou o assistente sobre MEI. Pergunte sobre abertura, impostos (DAS),
-          obrigações, limites de faturamento e mais.
+  <main>
+    <!-- ================= HERO ================= -->
+    <section class="hero">
+      <div class="container">
+        <div>
+          <span class="selo">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.8H20l-4.9 3.6 1.9 5.8L12 14.6 7 18.2l1.9-5.8L4 8.8h6.1z"/></svg>
+            Assistente virtual com IA
+          </span>
+          <h1>Tire suas dúvidas sobre <em>MEI</em> em segundos</h1>
+          <p class="lead">
+            Quer abrir seu CNPJ, entender o boleto mensal (DAS) ou saber se pode contratar um
+            funcionário? Pergunte do seu jeito: o Chatbot MEI responde em linguagem simples e
+            mostra em qual documento oficial encontrou a informação.
+          </p>
+          <div class="acoes">
+            <a class="botao botao-primario" href="/chat">
+              Conversar com o Chatbot
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </a>
+            <a class="botao botao-secundario" href="#como-funciona">Como funciona</a>
+          </div>
+          <div class="rodape-hero">
+            <span id="status-servidor" class="pilula-status">Verificando servidor…</span>
+          </div>
         </div>
-      </div>
-      <div id="sugestoes" class="sugestoes">
-        <button type="button">Quem pode ser MEI?</button>
-        <button type="button">Qual o limite de faturamento anual?</button>
-        <button type="button">Quanto o MEI paga de imposto por mês?</button>
-        <button type="button">O que você sabe fazer?</button>
+
+        <div class="previa" aria-hidden="true">
+          <div class="previa-topo">
+            <img src="icon.svg" alt="">
+            <div><strong>Chatbot MEI</strong><span>Online</span></div>
+          </div>
+          <div class="b u">Posso ter funcionário sendo MEI?</div>
+          <div class="b r">
+            Sim! O MEI pode contratar <strong>um empregado</strong>, que deve receber o salário
+            mínimo ou o piso da categoria.
+            <small>Fonte: Perguntas &amp; Respostas MEI</small>
+          </div>
+          <div class="b u">E o que é imposto, afinal?</div>
+          <div class="b r">
+            Imposto é um valor pago ao governo para financiar serviços públicos. No MEI, os
+            tributos vêm juntos em um único boleto mensal: o <strong>DAS</strong>.
+          </div>
+        </div>
       </div>
     </section>
 
-    <form id="formulario" class="entrada" autocomplete="off">
-      <textarea id="pergunta" rows="1" maxlength="1000"
-                placeholder="Digite sua pergunta…" aria-label="Pergunta"></textarea>
-      <button id="enviar" type="submit">Enviar</button>
-    </form>
+    <!-- ================= SOBRE O MEI ================= -->
+    <section id="sobre" class="secao secao-alt">
+      <div class="container">
+        <div class="secao-titulo">
+          <span class="sobretitulo">Para quem está começando</span>
+          <h2>O que é o MEI?</h2>
+        </div>
+        <div class="explicacao">
+          <div>
+            <p>
+              O <strong>Microempreendedor Individual (MEI)</strong> é a forma mais simples de
+              formalizar um pequeno negócio no Brasil. Quem trabalha por conta própria (manicure,
+              eletricista, vendedor, artesão, entre outras atividades) pode ter um CNPJ, emitir
+              nota fiscal e ter acesso a benefícios da Previdência Social.
+            </p>
+            <p>
+              Em troca, o MEI paga um valor fixo por mês em uma única guia, o DAS, e entrega uma
+              declaração simples uma vez por ano. Há regras sobre faturamento máximo, atividades
+              permitidas e contratação, e é aí que surgem as dúvidas.
+            </p>
+            <p>
+              Este chatbot foi criado para responder essas dúvidas de forma rápida, com base em
+              cartilhas e documentos oficiais de perguntas e respostas sobre o MEI.
+            </p>
+          </div>
+          <div class="destaques">
+            <div class="destaque">
+              <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h6"/></svg></span>
+              <div><strong>CNPJ próprio</strong><span>Emita notas fiscais e venda para empresas e governo.</span></div>
+            </div>
+            <div class="destaque">
+              <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>
+              <div><strong>Imposto em uma guia só</strong><span>Os tributos vêm juntos no DAS mensal.</span></div>
+            </div>
+            <div class="destaque">
+              <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+              <div><strong>Proteção do INSS</strong><span>Aposentadoria, auxílio por incapacidade, salário-maternidade e mais.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-    <footer class="rodape">
-      As respostas são geradas por IA com base em documentos oficiais sobre MEI e podem conter erros.
-      Confirme informações importantes no Portal do Empreendedor.
-    </footer>
+    <!-- ================= RECURSOS ================= -->
+    <section id="recursos" class="secao">
+      <div class="container">
+        <div class="secao-titulo">
+          <span class="sobretitulo">Repertório</span>
+          <h2>O que você pode perguntar</h2>
+          <p>Não precisa usar termos técnicos: o chatbot entende a pergunta pelo sentido e lembra do que já foi conversado.</p>
+        </div>
+        <div class="grade">
+          <article class="cartao">
+            <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span>
+            <h3>Abertura e formalização</h3>
+            <p>Quem pode ser MEI, atividades permitidas e como se cadastrar.</p>
+          </article>
+          <article class="cartao">
+            <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg></span>
+            <h3>Impostos e DAS</h3>
+            <p>O que é imposto, quanto se paga, vencimento e o que fazer em caso de atraso.</p>
+          </article>
+          <article class="cartao">
+            <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg></span>
+            <h3>Declaração anual</h3>
+            <p>DASN-SIMEI: prazos, como enviar e o que acontece se esquecer.</p>
+          </article>
+          <article class="cartao">
+            <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span>
+            <h3>Faturamento e limites</h3>
+            <p>Limite anual, o que acontece ao ultrapassar e desenquadramento.</p>
+          </article>
+          <article class="cartao">
+            <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0114 0M19 8v6M16 11h6"/></svg></span>
+            <h3>Empregado e nota fiscal</h3>
+            <p>Regras para contratar um funcionário e quando emitir nota.</p>
+          </article>
+          <article class="cartao">
+            <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 000-7.8z"/></svg></span>
+            <h3>Benefícios e encerramento</h3>
+            <p>Aposentadoria e auxílios do INSS, dívidas e como dar baixa no MEI.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= COMO FUNCIONA ================= -->
+    <section id="como-funciona" class="secao secao-alt">
+      <div class="container">
+        <div class="secao-titulo">
+          <span class="sobretitulo">Por trás das respostas</span>
+          <h2>Como funciona</h2>
+          <p>O chatbot combina inteligência artificial com documentos oficiais, para responder com base em fontes.</p>
+        </div>
+        <div class="passos">
+          <div class="passo">
+            <h3>Você pergunta</h3>
+            <p>Escreva do seu jeito, como em uma conversa. Perguntas de continuação também funcionam.</p>
+          </div>
+          <div class="passo">
+            <h3>Busca nos documentos</h3>
+            <p>A pergunta é reformulada e comparada com cartilhas e documentos oficiais sobre MEI e impostos.</p>
+          </div>
+          <div class="passo">
+            <h3>Resposta com fontes</h3>
+            <p>A IA monta uma resposta clara e mostra em qual documento e página a informação está.</p>
+          </div>
+        </div>
+
+        <div class="secao-titulo" style="margin-top:56px">
+          <h2 style="font-size:22px">Base de conhecimento</h2>
+        </div>
+        <ul class="documentos">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Cartilha do MEI</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Perguntas e Respostas sobre o MEI (3 volumes)</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Impostos da Pessoa Física e do MEI</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Cartilha de Impostos</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ================= CTA FINAL ================= -->
+    <section class="secao">
+      <div class="container">
+        <div class="cta-final">
+          <h2>Pronto para tirar suas dúvidas?</h2>
+          <p>É gratuito e não precisa de cadastro. Comece com uma pergunta simples, como “quem pode ser MEI?”.</p>
+          <a class="botao" href="/chat">
+            Abrir o Chatbot MEI
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <script src="script.js"></script>
+  <footer class="rodape-site">
+    <div class="container">
+      <span class="marca-fmu"><img src="logo-fmu.png" alt="FMU" onerror="this.outerHTML='<span class=&quot;fmu-texto&quot; role=&quot;img&quot; aria-label=&quot;FMU&quot;>FMU</span>'"></span>
+      <span>As respostas são geradas por IA e podem conter erros. Confirme informações importantes no Portal do Empreendedor (gov.br/mei).</span>
+    </div>
+  </footer>
+
+  <script>
+    // Já "acorda" o servidor enquanto a pessoa lê a página e mostra o estado dele.
+    (function () {
+      const el = document.getElementById("status-servidor");
+      let tentativas = 0;
+      async function checar() {
+        try {
+          const d = await (await fetch("/api/status", { cache: "no-store" })).json();
+          if (d.pronto) { el.textContent = "Chatbot online"; el.className = "pilula-status pronto"; return; }
+          if (d.erro) { el.textContent = "Chatbot indisponível no momento"; el.className = "pilula-status erro"; return; }
+          el.textContent = "Chatbot sendo preparado…";
+        } catch (_) {
+          el.textContent = "Acordando o servidor…";
+        }
+        if (++tentativas < 90) setTimeout(checar, 3000);
+      }
+      checar();
+    })();
+  </script>
 </body>
 </html>

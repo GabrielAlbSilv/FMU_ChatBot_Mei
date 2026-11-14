@@ -147,7 +147,13 @@ def _excedeu_limite(ip):
 
 @app.get("/")
 def index():
+    """Página inicial (apresentação + botão para o chat)."""
     return send_from_directory(app.static_folder, "index.html")
+
+
+@app.get("/chat")
+def pagina_chat():
+    return send_from_directory(app.static_folder, "chat.html")
 
 
 @app.get("/api/status")
