@@ -279,7 +279,6 @@ body.pagina-chat {
 .mensagens {
   flex: 1; overflow-y: auto; overscroll-behavior: contain;
   padding: 24px 20px; display: flex; flex-direction: column; gap: 16px;
-  scroll-behavior: smooth;
 }
 .boas-vindas { text-align: center; padding: 20px 8px 4px; }
 .boas-vindas img { width: 64px; height: 64px; margin: 0 auto 12px; }
@@ -295,9 +294,11 @@ body.pagina-chat {
 .sugestoes button:hover { border-color: var(--vermelho); background: var(--vermelho-claro); }
 .sugestoes button span { display: block; color: var(--suave); font-size: 12px; font-weight: 400; margin-top: 2px; }
 
-.msg { display: flex; gap: 10px; align-items: flex-start; animation: entrar .25s ease; }
+.msg { display: flex; gap: 10px; align-items: flex-start; animation: entrar .42s cubic-bezier(.2, .8, .2, 1) both; }
+.msg.user { transform-origin: bottom right; }
+.msg.bot { transform-origin: top left; }
 .msg.user { justify-content: flex-end; }
-.restaurando .msg, .restaurando .sugestoes-continuacao { animation: none; }
+.restaurando .msg, .restaurando .sugestoes-continuacao, .restaurando .surgir { animation: none; }
 .msg .mini-avatar { width: 30px; height: 30px; flex-shrink: 0; margin-top: 4px; }
 .msg-corpo { max-width: min(82%, 640px); min-width: 0; display: flex; flex-direction: column; }
 .msg.user .msg-corpo { align-items: flex-end; }
@@ -350,7 +351,7 @@ a.fonte:hover { border-color: var(--vermelho); color: var(--vermelho); }
 @keyframes piscar { 50% { opacity: 0; } }
 
 /* sugestões de próximas perguntas */
-.sugestoes-continuacao { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 40px; animation: entrar .3s ease; }
+.sugestoes-continuacao { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 40px; animation: surgir .5s ease both; }
 .sugestoes-continuacao button {
   text-align: left; background: var(--card); color: var(--vermelho);
   border: 1px solid var(--vermelho-borda); border-radius: 999px; padding: 8px 14px;
@@ -358,7 +359,9 @@ a.fonte:hover { border-color: var(--vermelho); color: var(--vermelho); }
 }
 .sugestoes-continuacao button:hover { background: var(--vermelho-claro); border-color: var(--vermelho); }
 .erro-msg .balao { background: var(--vermelho-claro); color: var(--vermelho); border: 1px solid var(--vermelho-borda); }
-@keyframes entrar { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes entrar { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
+.surgir { animation: surgir .45s ease both; }
+@keyframes surgir { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 .digitando { display: inline-flex; gap: 4px; padding: 4px 0; }
 .digitando span {

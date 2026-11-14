@@ -273,8 +273,10 @@ function htmlAcoes(acoes) {
   ).join("") + "</div>";
 }
 
-function rolarParaBaixo() {
-  requestAnimationFrame(() => { areaMensagens.scrollTop = areaMensagens.scrollHeight; });
+function rolarParaBaixo(suave = true) {
+  requestAnimationFrame(() => {
+    areaMensagens.scrollTo({ top: areaMensagens.scrollHeight, behavior: suave ? "smooth" : "auto" });
+  });
 }
 
 /* =========================================================================
@@ -308,10 +310,18 @@ function mostrarErro(texto) {
 }
 
 // Preenche uma mensagem do bot já concluída: texto, fontes, atalhos e botão copiar.
-function finalizarBot(partes, dados) {
+// "surgir" = fontes, atalhos e botão copiar aparecem com um leve fade, um após o outro.
+function finalizarBot(partes, dados, surgir = false) {
   partes.balao.innerHTML = markdownSimples(dados.texto) + htmlFontes(dados.fontes) + htmlAcoes(dados.acoes);
   const ferramentas = document.createElement("div");
   ferramentas.className = "msg-ferramentas";
+  if (surgir) {
+    [...partes.balao.querySelectorAll(".fontes, .acoes-portal"), ferramentas].forEach((el, i) => {
+      el.classList.add("surgir");
+      el.style.animationDelay = `${i * 120}ms`;
+    });
+    rolarParaBaixo();
+  }
   const copiar = document.createElement("button");
   copiar.type = "button";
   copiar.className = "botao-ferramenta";
@@ -445,6 +455,92 @@ async function lerEventos(resposta, aoReceber) {
   if (buffer.trim()) aoReceber(JSON.parse(buffer));
 }
 
+/* ---------- "Digitação" suave ----------
+   O texto chega da rede em rajadas; aqui ele é revelado num ritmo constante.
+   Velocidade: VELOCIDADE_DIGITACAO caracteres/s, acelerando aos poucos quando há muito
+   texto acumulado (respostas longas não demoram demais). */
+const VELOCIDADE_DIGITACAO = 70;    // caracteres por segundo (ritmo base)
+const FOLGA_ACELERACAO_S = 6;       // acumulado é escrito em ~6 s, no máximo, quando grande
+const PAUSA_ANTES_DO_BOT_MS = 350;  // tempo entre a mensagem do usuário e o "digitando..."
+
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+// Quem pediu "reduzir movimento" no sistema recebe o texto inteiro, sem animação.
+const movimentoReduzido = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function criarDigitador(balao) {
+  let alvo = "";          // texto disponível para mostrar
+  let mostrado = 0;       // quantos caracteres já aparecem (fracionário)
+  let fechado = false;    // não virá mais texto
+  let parado = false;
+  let rodando = false;
+  let ultimo = 0;
+  let concluir;
+  const terminou = new Promise((r) => { concluir = r; });
+  const CURSOR = '<span class="cursor" aria-hidden="true"></span>';
+
+  function desenhar() {
+    let parcial = alvo.slice(0, Math.floor(mostrado));
+    // Não deixa "**" sem par aparecer cru enquanto o negrito ainda está sendo escrito.
+    if ((parcial.match(/\*\*/g) || []).length % 2) parcial += "**";
+    const html = markdownSimples(parcial);
+    // O cursor fica dentro do último parágrafo/item, logo após a última letra.
+    const comCursor = html.replace(/<\/(p|li)>(<\/[uo]l>)?$/, `${CURSOR}</$1>$2`);
+    balao.innerHTML = comCursor === html ? html + CURSOR : comCursor;
+    acompanharRolagem();
+  }
+
+  function quadro(agora) {
+    if (parado) return;
+    const dt = Math.min(agora - ultimo, 100) / 1000;   // evita saltos após aba em segundo plano
+    ultimo = agora;
+    const pendente = alvo.length - mostrado;
+    if (pendente > 0) {
+      const velocidade = movimentoReduzido ? Infinity
+        : Math.max(VELOCIDADE_DIGITACAO, pendente / FOLGA_ACELERACAO_S);
+      const antes = Math.floor(mostrado);
+      mostrado = Math.min(alvo.length, mostrado + velocidade * dt);
+      if (Math.floor(mostrado) !== antes) desenhar();
+    }
+    if (fechado && mostrado >= alvo.length) { rodando = false; concluir(); return; }
+    requestAnimationFrame(quadro);
+  }
+
+  function iniciar() {
+    if (rodando || parado) return;
+    rodando = true;
+    ultimo = performance.now();
+    requestAnimationFrame(quadro);
+  }
+
+  return {
+    atualizar(texto) {
+      alvo = texto;
+      if (mostrado > alvo.length) mostrado = alvo.length;
+      iniciar();
+    },
+    fechar() {
+      fechado = true;
+      // Aba em segundo plano não anima (o navegador pausa): mostra tudo de uma vez.
+      if (document.hidden) {
+        mostrado = alvo.length;
+        parado = true;
+        desenhar();
+        concluir();
+        return;
+      }
+      iniciar();
+    },
+    parar() { parado = true; concluir(); },
+    terminou,
+  };
+}
+
+// Durante a digitação, só acompanha o fim se a pessoa não rolou para cima para ler.
+function acompanharRolagem() {
+  const distancia = areaMensagens.scrollHeight - areaMensagens.scrollTop - areaMensagens.clientHeight;
+  if (distancia < 140) areaMensagens.scrollTop = areaMensagens.scrollHeight;
+}
+
 async function enviarPergunta(pergunta) {
   if (!pergunta || enviando || !pronto) return;
   enviando = true;
@@ -460,22 +556,15 @@ async function enviarPergunta(pergunta) {
   ajustarAltura();
   atualizarBotoes();
 
+  // Pequena pausa antes do bot "começar a digitar", como numa conversa real.
+  await esperar(PAUSA_ANTES_DO_BOT_MS);
   const partes = criarMensagem("bot");
   partes.balao.innerHTML = '<span class="digitando" aria-label="Digitando"><span></span><span></span><span></span></span>';
 
+  const digitador = criarDigitador(partes.balao);
   let texto = "";
   let final = null;
   let erro = null;
-  let agendado = false;
-  const desenhar = () => {
-    agendado = false;
-    // O cursor vai dentro do último parágrafo/item, logo após a última palavra.
-    const cursor = '<span class="cursor" aria-hidden="true"></span>';
-    const html = markdownSimples(limparCitacoes(texto));
-    const comCursor = html.replace(/<\/(p|li)>(<\/[uo]l>)?$/, `${cursor}</$1>$2`);
-    partes.balao.innerHTML = comCursor === html ? html + cursor : comCursor;
-    rolarParaBaixo();
-  };
 
   try {
     const r = await fetch("/api/chat", {
@@ -490,9 +579,10 @@ async function enviarPergunta(pergunta) {
       await lerEventos(r, (ev) => {
         if (ev.tipo === "texto") {
           texto += ev.conteudo;
-          if (!agendado) { agendado = true; requestAnimationFrame(desenhar); }
+          digitador.atualizar(limparCitacoes(texto));
         } else if (ev.tipo === "fim") {
           final = ev;
+          digitador.atualizar(ev.resposta);   // texto final já limpo pelo servidor
         } else if (ev.tipo === "erro") {
           erro = ev.mensagem;
         }
@@ -504,17 +594,20 @@ async function enviarPergunta(pergunta) {
   }
 
   if (final) {
+    // Espera a "digitação" terminar antes de mostrar fontes, atalhos e sugestões.
+    digitador.fechar();
+    await digitador.terminou;
     const dados = {
       papel: "assistant", texto: final.resposta, fontes: final.fontes,
       acoes: final.acoes, sugestoes: final.sugestoes,
     };
-    agendado = true;   // impede um último "desenhar" atrasado
-    finalizarBot(partes, dados);
+    finalizarBot(partes, dados, true);
     mensagens.push({ papel: "user", texto: pergunta }, dados);
     salvarConversa();
+    await esperar(250);
     mostrarSugestoesContinuacao(dados.sugestoes);
   } else {
-    agendado = true;
+    digitador.parar();
     partes.msg.remove();
     mostrarErro(erro);
   }
