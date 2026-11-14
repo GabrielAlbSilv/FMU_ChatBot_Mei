@@ -47,31 +47,53 @@ const MAPA_ETAPAS = [
   [/iniciando thread|aguardando/, 8, 0],
 ];
 
+// A tela de carregamento fica visível por pelo menos este tempo, mesmo que o servidor
+// já esteja pronto: a barra avança no máximo proporcionalmente ao tempo decorrido.
+const TEMPO_MINIMO_MS = 6000;
+// % da barra em que cada item da lista de etapas começa
+const INICIO_ETAPAS = [0, 14, 45, 66, 92];
+
 let progresso = 0;     // valor exibido
 let alvo = 2;          // último marco real informado pelo servidor
 let teto = 10;         // até onde a barra pode "andar sozinha" enquanto espera o próximo marco
-let etapaIdx = 0;
+let etapaIdx = 0;      // etapa real informada pelo servidor
+let servidorPronto = false;
 let falhou = false;
 let animacao = null;
 
+// Etapa mostrada: acompanha a barra, mas nunca passa da etapa real do servidor.
+function etapaVisivel() {
+  if (progresso >= 100) return Math.min(itensEtapas.length, etapaIdx);
+  let idx = 0;
+  INICIO_ETAPAS.forEach((inicio, i) => { if (progresso >= inicio) idx = i; });
+  return Math.min(idx, etapaIdx);
+}
+
 function desenharProgresso() {
   const pct = Math.round(progresso);
+  const idx = etapaVisivel();
   barraPreenchida.style.width = pct + "%";
   pctEl.textContent = pct + "%";
   barra.setAttribute("aria-valuenow", String(pct));
   itensEtapas.forEach((li, i) => {
-    li.classList.toggle("feita", i < etapaIdx);
-    li.classList.toggle("ativa", i === etapaIdx && !falhou);
+    li.classList.toggle("feita", i < idx);
+    li.classList.toggle("ativa", i === idx && !falhou);
   });
-  if (itensEtapas[etapaIdx]) etapaAtualEl.textContent = itensEtapas[etapaIdx].textContent;
+  if (itensEtapas[idx]) etapaAtualEl.textContent = itensEtapas[idx].textContent;
+  else etapaAtualEl.textContent = "Pronto!";
 }
 
 function animarProgresso() {
-  // Sobe rápido até o marco real e depois avança devagar (sem nunca voltar).
-  if (progresso < alvo) progresso += Math.max((alvo - progresso) * 0.25, 0.4);
-  else if (progresso < teto) progresso += (teto - progresso) * 0.025;
-  progresso = Math.min(progresso, 100);
+  const decorrido = Date.now() - inicioCarregamento;
+  const limiteTempo = Math.min(100, (decorrido / TEMPO_MINIMO_MS) * 100);
+  // Sobe rápido até o marco real e depois avança devagar (sem nunca voltar),
+  // respeitando o ritmo mínimo de TEMPO_MINIMO_MS.
+  let novo = progresso;
+  if (novo < alvo) novo += Math.max((alvo - novo) * 0.25, 0.4);
+  else if (novo < teto) novo += (teto - novo) * 0.025;
+  progresso = Math.max(progresso, Math.min(novo, limiteTempo, 100));
   desenharProgresso();
+  if (servidorPronto && progresso >= 99.5 && decorrido >= TEMPO_MINIMO_MS) esconderTelaCarregando();
 }
 
 function definirMarco(pct, idx) {
@@ -93,21 +115,22 @@ function atualizarMensagemTempo() {
   }
 }
 
+// Servidor pronto: a barra segue até 100% no ritmo mínimo e a tela some sozinha.
 function concluirCarregamento() {
+  servidorPronto = true;
   definirMarco(100, itensEtapas.length);
   teto = 100;
-  const finalizar = () => {
-    if (progresso < 99.5) { progresso += (100 - progresso) * 0.35 + 1; desenharProgresso(); return; }
-    progresso = 100; desenharProgresso();
-    clearInterval(animacao);
-    setTimeout(() => {
-      tela.classList.add("oculta");
-      setTimeout(() => tela.remove(), 500);
-      if (!telaDeToque) campo.focus();
-    }, 350);
-  };
+}
+
+function esconderTelaCarregando() {
   clearInterval(animacao);
-  animacao = setInterval(finalizar, 40);
+  progresso = 100;
+  desenharProgresso();
+  setTimeout(() => {
+    tela.classList.add("oculta");
+    setTimeout(() => tela.remove(), 500);
+    if (!telaDeToque) campo.focus();
+  }, 450);
 }
 
 function mostrarFalha() {
