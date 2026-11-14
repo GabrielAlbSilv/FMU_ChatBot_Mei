@@ -476,3 +476,47 @@ a.fonte:hover { border-color: var(--vermelho); color: var(--vermelho); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- Diálogo de confirmação (nova conversa) ---------- */
+.dialogo {
+  width: min(400px, calc(100% - 32px)); max-width: none; padding: 0; margin: auto;
+  border: 0; border-radius: 22px; background: transparent; color: var(--texto); overflow: visible;
+}
+.dialogo::backdrop { background: rgba(20, 8, 12, .45); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.dialogo[open] { animation: dialogo-entrar .22s cubic-bezier(.2, .8, .2, 1); }
+.dialogo[open]::backdrop { animation: fundo-entrar .22s ease; }
+.dialogo.fechando { animation: dialogo-sair .16s ease forwards; }
+.dialogo.fechando::backdrop { animation: fundo-sair .16s ease forwards; }
+@keyframes dialogo-entrar { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes dialogo-sair { to { opacity: 0; transform: translateY(6px) scale(.97); } }
+@keyframes fundo-entrar { from { opacity: 0; } }
+@keyframes fundo-sair { to { opacity: 0; } }
+
+.dialogo-cartao {
+  background: var(--card); border: 1px solid var(--borda); border-radius: 22px;
+  padding: 28px 24px 22px; text-align: center; box-shadow: var(--sombra-forte);
+}
+.dialogo-icone {
+  display: grid; place-items: center; width: 52px; height: 52px; margin: 0 auto 14px;
+  border-radius: 16px; background: var(--vermelho-claro); color: var(--vermelho);
+}
+.dialogo-icone svg { width: 26px; height: 26px; }
+.dialogo-cartao h2 { margin: 0 0 8px; font-size: 19px; line-height: 1.3; }
+.dialogo-cartao p { margin: 0 0 22px; color: var(--suave); font-size: 14.5px; }
+.dialogo-botoes { display: flex; gap: 10px; }
+.dialogo-botoes .botao { flex: 1; }
+
+@media (max-width: 600px) {
+  /* no celular vira uma "folha" que sobe da parte de baixo da tela */
+  .dialogo { width: 100%; margin: auto 0 0; border-radius: 22px 22px 0 0; }
+  .dialogo-cartao {
+    border-radius: 22px 22px 0 0; border-bottom: 0;
+    padding-bottom: max(22px, env(safe-area-inset-bottom));
+  }
+  .dialogo[open] { animation-name: folha-subir; }
+  .dialogo.fechando { animation-name: folha-descer; }
+  .dialogo-botoes { flex-direction: column-reverse; }
+  .dialogo-botoes .botao { min-height: 48px; }
+}
+@keyframes folha-subir { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes folha-descer { to { transform: translateY(100%); } }

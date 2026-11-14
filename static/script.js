@@ -638,7 +638,49 @@ campo.addEventListener("keydown", (e) => {
 
 campo.addEventListener("input", () => { ajustarAltura(); atualizarBotoes(); });
 
+/* ---------- Confirmação antes de começar uma nova conversa ---------- */
+const dialogoNova = document.getElementById("dialogo-nova");
+
+function fecharDialogo(valor) {
+  if (!dialogoNova.open || dialogoNova.classList.contains("fechando")) return;
+  // Animação de saída e depois fecha de verdade
+  dialogoNova.classList.add("fechando");
+  setTimeout(() => {
+    dialogoNova.classList.remove("fechando");
+    dialogoNova.close(valor);
+  }, movimentoReduzido ? 0 : 160);
+}
+
+function pedirConfirmacaoNovaConversa() {
+  if (typeof dialogoNova.showModal !== "function") {   // navegador muito antigo
+    if (window.confirm("Iniciar uma nova conversa? A conversa atual será apagada.")) novaConversa();
+    return;
+  }
+  dialogoNova.returnValue = "";
+  dialogoNova.showModal();
+  // Foco no "Cancelar": evita apagar a conversa com um Enter sem querer.
+  dialogoNova.querySelector('[value="cancelar"]').focus();
+}
+
+// Os botões do formulário (method="dialog") passam pelo fechamento animado
+dialogoNova.querySelector("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  fecharDialogo(e.submitter ? e.submitter.value : "cancelar");
+});
+// Clique fora do cartão ou tecla Esc = cancelar
+dialogoNova.addEventListener("click", (e) => { if (e.target === dialogoNova) fecharDialogo("cancelar"); });
+dialogoNova.addEventListener("cancel", (e) => { e.preventDefault(); fecharDialogo("cancelar"); });
+dialogoNova.addEventListener("close", () => {
+  if (dialogoNova.returnValue === "confirmar") novaConversa();
+  else botaoNova.focus();
+});
+
 botaoNova.addEventListener("click", () => {
+  if (enviando || !mensagens.length) return;
+  pedirConfirmacaoNovaConversa();
+});
+
+function novaConversa() {
   if (enviando) return;
   mensagens = [];
   apagarConversaSalva();
@@ -647,7 +689,7 @@ botaoNova.addEventListener("click", () => {
   campo.value = "";
   ajustarAltura();
   if (!telaDeToque) campo.focus();
-});
+}
 
 // Mantém a última mensagem visível quando o teclado do celular abre
 if (window.visualViewport) {

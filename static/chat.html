@@ -88,6 +88,21 @@
     </div>
   </main>
 
+  <!-- ============ Confirmação de nova conversa ============ -->
+  <dialog id="dialogo-nova" class="dialogo" aria-labelledby="dialogo-titulo" aria-describedby="dialogo-texto">
+    <form method="dialog" class="dialogo-cartao">
+      <span class="dialogo-icone" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </span>
+      <h2 id="dialogo-titulo">Iniciar uma nova conversa?</h2>
+      <p id="dialogo-texto">A conversa atual será apagada deste dispositivo e não poderá ser recuperada.</p>
+      <div class="dialogo-botoes">
+        <button type="submit" value="cancelar" class="botao botao-secundario botao-pequeno">Cancelar</button>
+        <button type="submit" value="confirmar" class="botao botao-primario botao-pequeno">Nova conversa</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="script.js"></script>
 </body>
 </html>
