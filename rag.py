@@ -17,11 +17,12 @@ for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
 import json
 import math
 import re
+import time
 import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 
-VERSAO = "rag-leve-v8"
+VERSAO = "rag-leve-v9"
 ETAPA = "rag.py novo carregando"
 
 
@@ -333,6 +334,8 @@ SOBRE_O_BOT = """\
 - Limites: é uma IA; pode errar e não substitui um contador ou os canais oficiais
   (Portal do Empreendedor — gov.br/mei, Receita Federal, Sebrae)."""
 
+MARCA_SUGESTOES = "@@SUGESTOES:"
+
 SISTEMA = f"""Você é o Chatbot MEI, um assistente virtual simpático, didático e preciso,
 especializado em Microempreendedor Individual (MEI) e em tributação básica para
 pequenos empreendedores brasileiros. Responda sempre em português do Brasil.
@@ -383,7 +386,14 @@ Informações de conhecimento geral ficam sem citação.
 - Use parágrafos curtos, **negrito** para o essencial e listas com "-" ou "1." quando
   houver passos ou requisitos. NÃO use tabelas nem títulos com "#".
 - Respostas de tamanho proporcional à pergunta: saudações em 1–2 frases; dúvidas
-  complexas podem ter mais detalhes."""
+  complexas podem ter mais detalhes.
+
+## Perguntas de continuação
+Depois da resposta, na ÚLTIMA linha, escreva exatamente neste formato:
+{MARCA_SUGESTOES} pergunta curta 1 | pergunta curta 2 | pergunta curta 3
+São 2 ou 3 perguntas que o usuário provavelmente faria em seguida, escritas como o
+usuário escreveria (ex.: "E se eu atrasar o DAS?"), sobre MEI e que você consegue
+responder. Não mencione essa linha no texto da resposta."""
 
 PROMPT_REESCRITA = """Você prepara consultas de busca para uma base de documentos sobre MEI
 (Microempreendedor Individual): cartilhas do MEI, perguntas e respostas oficiais e
@@ -475,13 +485,87 @@ def _extrair_citacoes(resposta, total):
 
 
 def _formatar_fontes(trechos):
+    """[{"arquivo": "1-Cartilha_MEI.pdf", "paginas": [7, 9]}, ...]"""
     paginas = defaultdict(set)
     for t in trechos:
         paginas[t["fonte"]].add(int(t["pagina"]))
-    return [f"{fonte} (p. {', '.join(str(p) for p in sorted(pags))})"
-            for fonte, pags in sorted(paginas.items())]
+    return [{"arquivo": fonte, "paginas": sorted(pags)} for fonte, pags in sorted(paginas.items())]
 
 
+# ----------------------------------------------------- atalhos para o Portal oficial
+# (regex aplicada à pergunta + resposta sem acentos, rótulo do botão, link oficial)
+ACOES_PORTAL = [
+    (r"\b(emit|gera|pag|imprim)\w*\b.{0,40}\b(das|boleto|guia)\b|\bpgmei\b",
+     "Emitir o DAS (boleto mensal)",
+     "https://www8.receita.fazenda.gov.br/SimplesNacional/Aplicacoes/ATSPO/pgmei.app/Identificacao"),
+    (r"\bdasn\b|declaracao anual",
+     "Fazer a declaração anual (DASN-SIMEI)",
+     "https://www8.receita.fazenda.gov.br/SimplesNacional/Aplicacoes/ATSPO/dasnsimei.app/Identificacao"),
+    (r"\b(abrir|formaliz\w*|virar|ser|tornar)\b.{0,25}\bmei\b|quero ser mei|inscricao como mei",
+     "Abrir meu MEI",
+     "https://www.gov.br/empresas-e-negocios/pt-br/empreendedor/quero-ser-mei"),
+    (r"\bbaixa\b|\bencerr\w*|\bfechar\b.{0,25}\b(mei|empresa|cnpj)\b",
+     "Serviços do MEI (inclui dar baixa)",
+     "https://www.gov.br/empresas-e-negocios/pt-br/empreendedor/servicos-para-mei"),
+    (r"nota fiscal de servico|nfs-?e|\bemit\w*\b.{0,20}\bnota",
+     "Emissor de nota fiscal de serviço",
+     "https://www.nfse.gov.br/EmissorNacional"),
+]
+MAX_ACOES = 2
+
+
+def detectar_acoes(pergunta, resposta):
+    texto = _sem_acento(f"{pergunta} {resposta}")
+    acoes = []
+    for padrao, rotulo, url in ACOES_PORTAL:
+        if re.search(padrao, texto):
+            acoes.append({"rotulo": rotulo, "url": url})
+        if len(acoes) >= MAX_ACOES:
+            break
+    return acoes
+
+
+def _separar_sugestoes(texto):
+    """Tira a linha '@@SUGESTOES: a | b | c' do fim da resposta."""
+    pos = texto.find("@@")
+    if pos < 0:
+        return texto.strip(), []
+    cauda = texto[pos:].split(":", 1)[-1]
+    sugestoes = []
+    for s in re.split(r"\s*\|\s*|\n", cauda):
+        s = s.strip(" -*\"'")
+        if 5 <= len(s) <= 120 and s not in sugestoes:
+            sugestoes.append(s)
+    return texto[:pos].strip(), sugestoes[:3]
+
+
+# -------------------------------------------------------------------- cache
+# Perguntas sem contexto (início de conversa) se repetem muito: "quem pode ser MEI?".
+# Guardamos a resposta pronta para não gastar uma chamada da Groq de novo.
+CACHE_MAX = 200
+CACHE_VALIDADE = 24 * 3600   # segundos
+_cache = {}   # chave -> (momento, resultado)
+
+
+def _chave_cache(pergunta):
+    return " ".join(re.findall(r"[a-z0-9]+", _sem_acento(pergunta)))
+
+
+def _cache_ler(chave):
+    item = _cache.get(chave)
+    if item and time.time() - item[0] < CACHE_VALIDADE:
+        return item[1]
+    _cache.pop(chave, None)
+    return None
+
+
+def _cache_gravar(chave, resultado):
+    if len(_cache) >= CACHE_MAX:
+        _cache.pop(next(iter(_cache)))   # remove o mais antigo
+    _cache[chave] = (time.time(), resultado)
+
+
+# -------------------------------------------------------------------- geração
 def montar_mensagens(trechos, pergunta, historico):
     contexto = "\n\n".join(
         f"[{i}] (Fonte: {t['fonte']}, p. {t['pagina']})\n{t['texto']}"
@@ -493,8 +577,22 @@ def montar_mensagens(trechos, pergunta, historico):
             [{"role": "user", "content": usuario}])
 
 
-def responder(indice, cliente, pergunta, historico=None):
+def responder_stream(indice, cliente, pergunta, historico=None):
+    """Gera a resposta aos poucos.
+
+    Produz tuplas:
+      ("texto", pedaço)   -> trecho novo da resposta (pode conter marcadores [n])
+      ("fim", resultado)  -> {"resposta", "fontes", "acoes", "sugestoes", "cache"}
+    Erros da Groq (ex.: limite de uso) são propagados como exceção.
+    """
     historico = _sanear_historico(historico)
+    chave = None if historico else _chave_cache(pergunta)
+    if chave:
+        pronto = _cache_ler(chave)
+        if pronto:
+            yield "texto", pronto["resposta"]
+            yield "fim", dict(pronto, cache=True)
+            return
 
     consultas = [pergunta]
     reescrita = reescrever_consulta(cliente, pergunta, historico) if REESCREVER_CONSULTA else None
@@ -508,12 +606,42 @@ def responder(indice, cliente, pergunta, historico=None):
     print(f"[RAG] consultas: {consultas}", flush=True)
 
     trechos = indice.buscar_varias(consultas)
-    r = cliente.chat.completions.create(
+    fluxo = cliente.chat.completions.create(
         model=MODELO_LLM,
         temperature=0.2,
+        stream=True,
         messages=montar_mensagens(trechos, pergunta, historico),
         **_opcoes_modelo(MODELO_LLM, "medium"),
     )
-    resposta, citados = _extrair_citacoes(r.choices[0].message.content or "", len(trechos))
-    fontes = _formatar_fontes([trechos[i] for i in sorted(citados)])
-    return resposta, fontes
+
+    completo, enviado = "", 0
+    for pedaco in fluxo:
+        if not pedaco.choices:
+            continue
+        completo += pedaco.choices[0].delta.content or ""
+        # Não envia a linha de sugestões (começa com "@@") nem um "@" que pode iniciá-la.
+        pos = completo.find("@@")
+        limite = pos if pos >= 0 else len(completo) - (1 if completo.endswith("@") else 0)
+        if limite > enviado:
+            yield "texto", completo[enviado:limite]
+            enviado = limite
+
+    texto, sugestoes = _separar_sugestoes(completo)
+    resposta, citados = _extrair_citacoes(texto, len(trechos))
+    resultado = {
+        "resposta": resposta,
+        "fontes": _formatar_fontes([trechos[i] for i in sorted(citados)]),
+        "acoes": detectar_acoes(pergunta, resposta),
+        "sugestoes": sugestoes,
+    }
+    if chave and resposta:
+        _cache_gravar(chave, resultado)
+    yield "fim", dict(resultado, cache=False)
+
+
+def responder(indice, cliente, pergunta, historico=None):
+    """Versão sem streaming (útil para testes): devolve o resultado final."""
+    for tipo, dado in responder_stream(indice, cliente, pergunta, historico):
+        if tipo == "fim":
+            return dado
+    return None

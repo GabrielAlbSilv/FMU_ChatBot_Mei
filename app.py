@@ -20,6 +20,7 @@ for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
 import faulthandler
 import hashlib
 import importlib.util
+import json
 import re
 import sys
 import threading
@@ -29,7 +30,8 @@ from collections import defaultdict, deque
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, send_from_directory
+from flask import (Flask, Response, abort, jsonify, request, send_from_directory,
+                   stream_with_context)
 
 load_dotenv()
 
@@ -41,6 +43,7 @@ JANELA_SEGUNDOS = 60         # ...a cada 60 segundos
 
 _AQUI = Path(__file__).resolve().parent
 _ARQ_RAG = _AQUI / "rag.py"
+_PADRAO_PDF = re.compile(r"^\d+-[\w&.-]+\.pdf$", re.IGNORECASE)   # só os PDFs numerados da base
 
 estado = {
     "pid": None, "t0": time.time(), "thread_id": None,
@@ -204,13 +207,48 @@ def chat():
         historico = []
     historico = historico[-20:]   # o rag.py ainda limita e valida cada mensagem
 
-    try:
-        resposta, fontes = estado["rag"].responder(
-            estado["retriever"], estado["llm"], pergunta, historico)
-        return jsonify(resposta=resposta, fontes=fontes)
-    except Exception as erro:  # noqa: BLE001
-        print(f"[ERRO] Ao responder: {erro}", flush=True)
-        return jsonify(erro="Não foi possível gerar a resposta agora. Tente novamente."), 500
+    rag = estado["rag"]
+    fluxo = rag.responder_stream(estado["retriever"], estado["llm"], pergunta, historico)
+
+    def eventos():
+        """Uma linha JSON por evento (NDJSON): o navegador mostra o texto aos poucos."""
+        try:
+            for tipo, dado in fluxo:
+                if tipo == "texto":
+                    yield json.dumps({"tipo": "texto", "conteudo": dado}, ensure_ascii=False) + "\n"
+                else:
+                    yield json.dumps(dict(dado, tipo="fim"), ensure_ascii=False) + "\n"
+        except Exception as erro:  # noqa: BLE001
+            print(f"[ERRO] Ao responder: {type(erro).__name__}: {erro}", flush=True)
+            yield json.dumps({"tipo": "erro", "mensagem": _mensagem_erro_llm(erro)},
+                             ensure_ascii=False) + "\n"
+
+    return Response(stream_with_context(eventos()), mimetype="application/x-ndjson",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _mensagem_erro_llm(erro):
+    """Traduz erros da API da Groq em mensagens úteis para o usuário."""
+    nome = type(erro).__name__
+    status = getattr(erro, "status_code", None)
+    if nome == "RateLimitError" or status == 429:
+        return ("Muitas pessoas estão usando o chatbot agora e o limite da inteligência "
+                "artificial foi atingido. Tente de novo em cerca de 1 minuto.")
+    if nome in ("APIConnectionError", "APITimeoutError"):
+        return "Não consegui me conectar à inteligência artificial. Verifique a conexão e tente novamente."
+    if nome == "AuthenticationError" or status == 401:
+        return "O chatbot está com um problema de configuração (chave da API). Avise os responsáveis."
+    if status and status >= 500:
+        return "O serviço de inteligência artificial está instável no momento. Tente novamente em instantes."
+    return "Não foi possível gerar a resposta agora. Tente novamente."
+
+
+@app.get("/documentos/<nome>")
+def documento(nome):
+    """Abre um dos PDFs da base (ex.: /documentos/1-Cartilha_MEI.pdf#page=7)."""
+    if not _PADRAO_PDF.match(nome) or not (_AQUI / nome).is_file():
+        abort(404)
+    return send_from_directory(_AQUI, nome, mimetype="application/pdf", max_age=86400)
 
 
 if __name__ == "__main__":

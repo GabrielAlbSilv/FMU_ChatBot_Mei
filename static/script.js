@@ -11,9 +11,12 @@ const modeloBoasVindas = document.getElementById("modelo-boas-vindas");
 
 let pronto = false;
 let enviando = false;
-// Memória da conversa: o bot entende perguntas de continuação ("e quanto custa?")
-let historico = [];
-const MAX_HISTORICO = 6;
+// Conversa atual: [{papel: "user"|"assistant", texto, fontes, acoes, sugestoes}]
+// Fica salva no navegador, então sobrevive a recarregar a página.
+let mensagens = [];
+const MAX_HISTORICO = 6;          // mensagens enviadas ao servidor como contexto
+const MAX_SALVAS = 40;            // mensagens guardadas no navegador
+const CHAVE_ARMAZENAMENTO = "chatbot-mei-conversa-v1";
 // Em celular/tablet o Enter quebra linha; o envio é pelo botão.
 const telaDeToque = window.matchMedia("(pointer: coarse)").matches;
 
@@ -191,10 +194,17 @@ function markdownSimples(texto) {
   return html;
 }
 
-// "3-Perguntas&Respostas2_MEI.pdf (p. 28)" -> "Perguntas & Respostas 2 MEI · p. 28"
-function nomeFonte(fonte) {
-  const m = String(fonte).match(/^(.*?)(?:\s*\((p\.[^)]*)\))?$/);
-  const nome = m[1]
+// Remove marcadores de citação [1], [2, 3], 【4†...】 (inclusive um incompleto no fim,
+// enquanto a resposta ainda está chegando).
+function limparCitacoes(texto) {
+  return texto
+    .replace(/\s?[\[【]\s*\d{1,2}(?:\s*[,;–-]\s*\d{1,2})*\s*(?:†[^\]】]*)?[\]】]/g, "")
+    .replace(/\s?[\[【][\d\s,;–†-]*$/, "");
+}
+
+// "3-Perguntas&Respostas2_MEI.pdf" -> "Perguntas & Respostas 2 MEI"
+function nomeDocumento(arquivo) {
+  return String(arquivo)
     .replace(/^\d+-/, "")
     .replace(/(\.pdf)+$/i, "")
     .replace(/&/g, " & ")
@@ -202,16 +212,52 @@ function nomeFonte(fonte) {
     .replace(/([a-zà-ú])(\d)/gi, "$1 $2")
     .replace(/\s+/g, " ")
     .trim();
-  return m[2] ? `${nome} · ${m[2]}` : nome;
 }
 
 const ICONE_DOC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>';
+const ICONE_EXTERNO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg>';
+const ICONE_COPIAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1"/></svg>';
+const ICONE_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>';
+const MAX_FONTES = 6;
+
+// Chips das fontes: cada página abre o PDF exatamente nela.
+function htmlFontes(fontes) {
+  if (!fontes || !fontes.length) return "";
+  const chips = [];
+  for (const f of fontes) {
+    if (typeof f === "string") {           // formato antigo salvo no navegador
+      chips.push(`<span class="fonte">${ICONE_DOC}${escapar(f)}</span>`);
+      continue;
+    }
+    const url = "/documentos/" + encodeURIComponent(f.arquivo);
+    for (const p of f.paginas || []) {
+      chips.push(
+        `<a class="fonte" href="${url}#page=${Number(p)}" target="_blank" rel="noopener" ` +
+        `title="Abrir o documento na página ${Number(p)}">${ICONE_DOC}${escapar(nomeDocumento(f.arquivo))} · p. ${Number(p)}</a>`
+      );
+    }
+  }
+  return '<div class="fontes"><span class="fontes-titulo">Fontes consultadas (clique para abrir)</span>' +
+    chips.slice(0, MAX_FONTES).join("") + "</div>";
+}
+
+// Botões que levam ao site oficial para resolver o assunto (emitir DAS, declarar...).
+function htmlAcoes(acoes) {
+  if (!acoes || !acoes.length) return "";
+  return '<div class="acoes-portal">' + acoes.map((a) =>
+    `<a class="acao-portal" href="${escapar(a.url)}" target="_blank" rel="noopener" ` +
+    `title="Abre o site oficial do governo">${escapar(a.rotulo)}${ICONE_EXTERNO}</a>`
+  ).join("") + "</div>";
+}
 
 function rolarParaBaixo() {
   requestAnimationFrame(() => { areaMensagens.scrollTop = areaMensagens.scrollHeight; });
 }
 
-function adicionarMensagem(tipo, conteudoHtml, extraClasse = "") {
+/* =========================================================================
+   Mensagens na tela
+   ========================================================================= */
+function criarMensagem(tipo, extraClasse = "") {
   const msg = document.createElement("div");
   msg.className = `msg ${tipo} ${extraClasse}`.trim();
   if (tipo === "bot") {
@@ -219,18 +265,93 @@ function adicionarMensagem(tipo, conteudoHtml, extraClasse = "") {
     av.src = "icon.svg"; av.alt = ""; av.className = "mini-avatar";
     msg.appendChild(av);
   }
+  const corpo = document.createElement("div");
+  corpo.className = "msg-corpo";
   const balao = document.createElement("div");
   balao.className = "balao";
-  balao.innerHTML = conteudoHtml;
-  msg.appendChild(balao);
+  corpo.appendChild(balao);
+  msg.appendChild(corpo);
   areaMensagens.appendChild(msg);
   rolarParaBaixo();
-  return msg;
+  return { msg, corpo, balao };
+}
+
+function mostrarUsuario(texto) {
+  criarMensagem("user").balao.innerHTML = `<p>${escapar(texto)}</p>`;
+}
+
+function mostrarErro(texto) {
+  criarMensagem("bot", "erro-msg").balao.innerHTML = `<p>${escapar(texto)}</p>`;
+}
+
+// Preenche uma mensagem do bot já concluída: texto, fontes, atalhos e botão copiar.
+function finalizarBot(partes, dados) {
+  partes.balao.innerHTML = markdownSimples(dados.texto) + htmlFontes(dados.fontes) + htmlAcoes(dados.acoes);
+  const ferramentas = document.createElement("div");
+  ferramentas.className = "msg-ferramentas";
+  const copiar = document.createElement("button");
+  copiar.type = "button";
+  copiar.className = "botao-ferramenta";
+  copiar.innerHTML = `${ICONE_COPIAR}<span>Copiar</span>`;
+  copiar.title = "Copiar resposta";
+  copiar.addEventListener("click", () => copiarTexto(dados.texto, copiar));
+  ferramentas.appendChild(copiar);
+  partes.corpo.appendChild(ferramentas);
+}
+
+function mostrarBot(dados) {
+  finalizarBot(criarMensagem("bot"), dados);
+}
+
+// Sugestões de próximas perguntas (só abaixo da última resposta)
+function mostrarSugestoesContinuacao(sugestoes) {
+  removerSugestoesContinuacao();
+  if (!sugestoes || !sugestoes.length) return;
+  const caixa = document.createElement("div");
+  caixa.className = "sugestoes-continuacao";
+  caixa.id = "sugestoes-continuacao";
+  caixa.setAttribute("aria-label", "Sugestões de próximas perguntas");
+  for (const s of sugestoes) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = s;
+    b.addEventListener("click", () => enviarPergunta(s));
+    caixa.appendChild(b);
+  }
+  areaMensagens.appendChild(caixa);
+  rolarParaBaixo();
+}
+
+function removerSugestoesContinuacao() {
+  const antiga = document.getElementById("sugestoes-continuacao");
+  if (antiga) antiga.remove();
+}
+
+async function copiarTexto(texto, botaoCopiar) {
+  const limpo = texto.replace(/\*\*(.+?)\*\*/g, "$1");
+  try {
+    await navigator.clipboard.writeText(limpo);
+  } catch (_) {
+    // Navegadores antigos ou página sem HTTPS
+    const area = document.createElement("textarea");
+    area.value = limpo;
+    area.style.position = "fixed"; area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand("copy"); } catch (_) { /* sem suporte */ }
+    area.remove();
+  }
+  botaoCopiar.innerHTML = `${ICONE_OK}<span>Copiado!</span>`;
+  botaoCopiar.classList.add("copiado");
+  setTimeout(() => {
+    botaoCopiar.innerHTML = `${ICONE_COPIAR}<span>Copiar</span>`;
+    botaoCopiar.classList.remove("copiado");
+  }, 1600);
 }
 
 function atualizarBotoes() {
   botao.disabled = !pronto || enviando || !campo.value.trim();
-  botaoNova.disabled = !pronto || enviando || historico.length === 0;
+  botaoNova.disabled = !pronto || enviando || mensagens.length === 0;
 }
 
 function mostrarBoasVindas() {
@@ -243,55 +364,146 @@ function mostrarBoasVindas() {
 }
 
 /* =========================================================================
-   Envio de perguntas
+   Conversa salva no navegador
    ========================================================================= */
+function salvarConversa() {
+  try {
+    localStorage.setItem(CHAVE_ARMAZENAMENTO, JSON.stringify(mensagens.slice(-MAX_SALVAS)));
+  } catch (_) { /* modo anônimo ou armazenamento bloqueado: segue sem salvar */ }
+}
+
+function carregarConversa() {
+  try {
+    const dados = JSON.parse(localStorage.getItem(CHAVE_ARMAZENAMENTO) || "[]");
+    if (Array.isArray(dados)) {
+      return dados.filter((m) => m && (m.papel === "user" || m.papel === "assistant") && typeof m.texto === "string");
+    }
+  } catch (_) { /* ignora dados inválidos */ }
+  return [];
+}
+
+function apagarConversaSalva() {
+  try { localStorage.removeItem(CHAVE_ARMAZENAMENTO); } catch (_) { /* ignora */ }
+}
+
+function restaurarConversa() {
+  mensagens = carregarConversa();
+  if (!mensagens.length) { mostrarBoasVindas(); return; }
+  areaMensagens.innerHTML = "";
+  areaMensagens.classList.add("restaurando");   // sem animação de entrada
+  for (const m of mensagens) {
+    if (m.papel === "user") mostrarUsuario(m.texto);
+    else mostrarBot(m);
+  }
+  const ultima = mensagens[mensagens.length - 1];
+  if (ultima.papel === "assistant") mostrarSugestoesContinuacao(ultima.sugestoes);
+  setTimeout(() => areaMensagens.classList.remove("restaurando"), 50);
+}
+
+/* =========================================================================
+   Envio de perguntas (resposta chega aos poucos)
+   ========================================================================= */
+async function lerEventos(resposta, aoReceber) {
+  // O servidor manda uma linha JSON por evento (NDJSON).
+  const leitor = resposta.body.getReader();
+  const decodificador = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await leitor.read();
+    if (done) break;
+    buffer += decodificador.decode(value, { stream: true });
+    let quebra;
+    while ((quebra = buffer.indexOf("\n")) >= 0) {
+      const linha = buffer.slice(0, quebra).trim();
+      buffer = buffer.slice(quebra + 1);
+      if (linha) aoReceber(JSON.parse(linha));
+    }
+  }
+  if (buffer.trim()) aoReceber(JSON.parse(buffer));
+}
+
 async function enviarPergunta(pergunta) {
   if (!pergunta || enviando || !pronto) return;
   enviando = true;
   const sugestoes = document.getElementById("sugestoes");
   if (sugestoes) sugestoes.remove();
+  const boasVindas = areaMensagens.querySelector(".boas-vindas");
+  if (boasVindas) boasVindas.remove();
+  removerSugestoesContinuacao();
 
-  adicionarMensagem("user", `<p>${escapar(pergunta)}</p>`);
+  const historico = mensagens.slice(-MAX_HISTORICO).map(({ papel, texto }) => ({ papel, texto }));
+  mostrarUsuario(pergunta);
   campo.value = "";
   ajustarAltura();
   atualizarBotoes();
 
-  const digitando = adicionarMensagem(
-    "bot", '<span class="digitando" aria-label="Digitando"><span></span><span></span><span></span></span>'
-  );
+  const partes = criarMensagem("bot");
+  partes.balao.innerHTML = '<span class="digitando" aria-label="Digitando"><span></span><span></span><span></span></span>';
+
+  let texto = "";
+  let final = null;
+  let erro = null;
+  let agendado = false;
+  const desenhar = () => {
+    agendado = false;
+    // O cursor vai dentro do último parágrafo/item, logo após a última palavra.
+    const cursor = '<span class="cursor" aria-hidden="true"></span>';
+    const html = markdownSimples(limparCitacoes(texto));
+    const comCursor = html.replace(/<\/(p|li)>(<\/[uo]l>)?$/, `${cursor}</$1>$2`);
+    partes.balao.innerHTML = comCursor === html ? html + cursor : comCursor;
+    rolarParaBaixo();
+  };
 
   try {
     const r = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pergunta, historico: historico.slice(-MAX_HISTORICO) }),
+      body: JSON.stringify({ pergunta, historico }),
     });
-    const d = await r.json().catch(() => ({}));
-    digitando.remove();
-
-    if (!r.ok) {
-      adicionarMensagem("bot", `<p>${escapar(d.erro || "Erro inesperado.")}</p>`, "erro-msg");
+    if (!r.ok || !r.body) {
+      const d = await r.json().catch(() => ({}));
+      erro = d.erro || "Erro inesperado.";
     } else {
-      historico.push({ papel: "user", texto: pergunta }, { papel: "assistant", texto: d.resposta });
-      let html = markdownSimples(d.resposta);
-      if (d.fontes && d.fontes.length) {
-        html += '<div class="fontes"><span class="fontes-titulo">Fontes consultadas</span>' +
-          d.fontes.map((f) => `<span class="fonte" title="${escapar(f)}">${ICONE_DOC}${escapar(nomeFonte(f))}</span>`).join("") +
-          "</div>";
-      }
-      adicionarMensagem("bot", html);
+      await lerEventos(r, (ev) => {
+        if (ev.tipo === "texto") {
+          texto += ev.conteudo;
+          if (!agendado) { agendado = true; requestAnimationFrame(desenhar); }
+        } else if (ev.tipo === "fim") {
+          final = ev;
+        } else if (ev.tipo === "erro") {
+          erro = ev.mensagem;
+        }
+      });
+      if (!final && !erro) erro = "A resposta foi interrompida. Tente novamente.";
     }
   } catch (_) {
-    digitando.remove();
-    adicionarMensagem("bot", "<p>Sem conexão com o servidor. Verifique sua internet e tente novamente.</p>", "erro-msg");
-  } finally {
-    enviando = false;
-    atualizarBotoes();
-    if (!telaDeToque) campo.focus();
+    erro = "Sem conexão com o servidor. Verifique sua internet e tente novamente.";
   }
+
+  if (final) {
+    const dados = {
+      papel: "assistant", texto: final.resposta, fontes: final.fontes,
+      acoes: final.acoes, sugestoes: final.sugestoes,
+    };
+    agendado = true;   // impede um último "desenhar" atrasado
+    finalizarBot(partes, dados);
+    mensagens.push({ papel: "user", texto: pergunta }, dados);
+    salvarConversa();
+    mostrarSugestoesContinuacao(dados.sugestoes);
+  } else {
+    agendado = true;
+    partes.msg.remove();
+    mostrarErro(erro);
+  }
+
+  enviando = false;
+  atualizarBotoes();
+  rolarParaBaixo();
+  if (!telaDeToque) campo.focus();
 }
 
 function ajustarAltura() {
+  if (!campo.value) { campo.style.height = ""; return; }   // vazio: volta a 1 linha
   campo.style.height = "auto";
   campo.style.height = Math.min(campo.scrollHeight, 140) + "px";
 }
@@ -312,11 +524,13 @@ campo.addEventListener("input", () => { ajustarAltura(); atualizarBotoes(); });
 
 botaoNova.addEventListener("click", () => {
   if (enviando) return;
-  historico = [];
+  mensagens = [];
+  apagarConversaSalva();
   mostrarBoasVindas();
   atualizarBotoes();
   campo.value = "";
   ajustarAltura();
+  if (!telaDeToque) campo.focus();
 });
 
 // Mantém a última mensagem visível quando o teclado do celular abre
@@ -326,7 +540,7 @@ if (window.visualViewport) {
   });
 }
 
-mostrarBoasVindas();
+restaurarConversa();
 atualizarBotoes();
 desenharProgresso();
 animacao = setInterval(animarProgresso, 120);
