@@ -214,8 +214,8 @@ def chat():
         """Uma linha JSON por evento (NDJSON): o navegador mostra o texto aos poucos."""
         try:
             for tipo, dado in fluxo:
-                if tipo == "texto":
-                    yield json.dumps({"tipo": "texto", "conteudo": dado}, ensure_ascii=False) + "\n"
+                if tipo in ("texto", "status"):
+                    yield json.dumps({"tipo": tipo, "conteudo": dado}, ensure_ascii=False) + "\n"
                 else:
                     yield json.dumps(dict(dado, tipo="fim"), ensure_ascii=False) + "\n"
         except Exception as erro:  # noqa: BLE001

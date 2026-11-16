@@ -1,0 +1,33 @@
+{
+  "_aviso": "Páginas oficiais (SOMENTE Sebrae e Receita Federal) lidas primeiro quando alguma palavra-chave aparece na pergunta. Endereços fora desses sites são ignorados pelo verificador.py. Edite à vontade.",
+  "paginas": [
+    {
+      "palavras": ["dasn", "simei", "declaracao anual", "declarar faturamento", "declaracao do mei"],
+      "urls": [
+        "https://sebrae.com.br/empreendedores/guiaparaomei/ja-sou-mei/regularizar-mei/declaracao-anual-faturamento-dasn",
+        "https://www8.receita.fazenda.gov.br/SimplesNacional/Servicos/Grupo.aspx?grp=8"
+      ]
+    },
+    {
+      "palavras": [" das ", "boleto", "guia", "pagamento", "atraso", "atrasad", "regulariz", "divida", "pgmei", "vencimento"],
+      "urls": [
+        "https://sebrae.com.br/empreendedores/guiaparaomei/ja-sou-mei/regularizar-mei",
+        "https://www8.receita.fazenda.gov.br/SimplesNacional/Servicos/Grupo.aspx?grp=8"
+      ]
+    },
+    {
+      "palavras": ["limite", "faturamento", "teto", "desenquadr", "ultrapass"],
+      "urls": [
+        "https://sebrae.com.br/empreendedores/guiaparaomei/ja-sou-mei/regularizar-mei",
+        "https://sebrae.com.br/empreendedores/guiaparaomei/ja-sou-mei/regularizar-mei/declaracao-anual-faturamento-dasn"
+      ]
+    },
+    {
+      "palavras": ["imposto de renda", "irpf", "dirpf", "restitui", "malha fina", "quem deve declarar", "obrigado a declarar"],
+      "urls": [
+        "https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/perguntas-frequentes/imposto-de-renda/dirpf",
+        "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda"
+      ]
+    }
+  ]
+}

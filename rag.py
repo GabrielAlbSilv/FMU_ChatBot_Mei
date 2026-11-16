@@ -35,6 +35,11 @@ def _etapa(texto):
 _etapa("importando numpy")
 import numpy as np  # noqa: E402
 
+import sys  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # app.py carrega este arquivo por caminho
+import verificador  # noqa: E402  (conferência com Sebrae e Receita Federal)
+
 _etapa("rag importado")
 
 PASTA_PROJETO = Path(__file__).resolve().parent
@@ -54,6 +59,8 @@ MODELO_LLM = os.getenv("MODELO_LLM", "openai/gpt-oss-120b")
 # Modelo usado só para reescrever a pergunta antes da busca (pode ser um menor/mais rápido).
 MODELO_REESCRITA = os.getenv("MODELO_REESCRITA", MODELO_LLM)
 REESCREVER_CONSULTA = os.getenv("REESCREVER_CONSULTA", "1") != "0"
+# Modelo da etapa que compara a resposta dos PDFs com os sites do Sebrae e da Receita Federal.
+MODELO_VERIFICACAO = os.getenv("MODELO_VERIFICACAO", MODELO_LLM)
 MAX_HISTORICO = 6          # mensagens anteriores (usuário + bot) enviadas ao LLM
 MAX_CHARS_HISTORICO = 1500  # por mensagem
 TAM_CHUNK = 900
@@ -334,6 +341,8 @@ SOBRE_O_BOT = """\
 - Base de conhecimento: cartilhas e documentos de perguntas e respostas sobre MEI e
   sobre impostos da Receita Federal, além de conhecimento geral para explicar conceitos
   básicos.
+- Atualização: antes de responder, confere a resposta feita com os PDFs nos sites do Sebrae e da
+  Receita Federal (únicas fontes de comparação) e, se algo estiver desatualizado, corrige.
 - Limites: é uma IA; pode errar e não substitui um contador ou os canais oficiais
   (Portal do Empreendedor — gov.br/mei, site da Receita Federal — gov.br/receitafederal, Sebrae)."""
 
@@ -586,8 +595,9 @@ def responder_stream(indice, cliente, pergunta, historico=None):
     """Gera a resposta aos poucos.
 
     Produz tuplas:
+      ("status", mensagem) -> etapa em andamento (só com a conferência nos sites ligada)
       ("texto", pedaço)   -> trecho novo da resposta (pode conter marcadores [n])
-      ("fim", resultado)  -> {"resposta", "fontes", "acoes", "sugestoes", "cache"}
+      ("fim", resultado)  -> {"resposta", "fontes", "acoes", "sugestoes", "verificacao", "cache"}
     Erros da Groq (ex.: limite de uso) são propagados como exceção.
     """
     historico = _sanear_historico(historico)
@@ -611,6 +621,11 @@ def responder_stream(indice, cliente, pergunta, historico=None):
     print(f"[RAG] consultas: {consultas}", flush=True)
 
     trechos = indice.buscar_varias(consultas)
+
+    if verificador.ATIVO:
+        yield from _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico, chave)
+        return
+
     fluxo = cliente.chat.completions.create(
         model=MODELO_LLM,
         temperature=0.2,
@@ -638,8 +653,52 @@ def responder_stream(indice, cliente, pergunta, historico=None):
         "fontes": _formatar_fontes([trechos[i] for i in sorted(citados)]),
         "acoes": detectar_acoes(pergunta, resposta),
         "sugestoes": sugestoes,
+        "verificacao": {"status": "nao_aplicavel"},
     }
     if chave and resposta:
+        _cache_gravar(chave, resultado)
+    yield "fim", dict(resultado, cache=False)
+
+
+def _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico, chave):
+    """Rascunho (PDFs) -> comparação com Sebrae/Receita Federal -> resposta final.
+
+    O rascunho NÃO é mostrado: o usuário só vê a versão já conferida (ou a dos PDFs, se não
+    foi possível conferir). Eventos extras ("status") deixam a tela informar cada etapa.
+    """
+    yield "status", "Consultando os documentos…"
+    r = cliente.chat.completions.create(
+        model=MODELO_LLM,
+        temperature=0.2,
+        stream=False,
+        messages=montar_mensagens(trechos, pergunta, historico),
+        **_opcoes_modelo(MODELO_LLM, "medium"),
+    )
+    completo = r.choices[0].message.content or ""
+    texto, sugestoes = _separar_sugestoes(completo)
+    resposta, citados = _extrair_citacoes(texto, len(trechos))
+    verificacao = {"status": "nao_aplicavel"}
+
+    if resposta and verificador.deve_verificar(pergunta, bool(citados)):
+        yield "status", "Conferindo com o Sebrae e a Receita Federal…"
+        verificacao = verificador.verificar(
+            cliente, MODELO_VERIFICACAO, _opcoes_modelo(MODELO_VERIFICACAO, "low"),
+            pergunta, consultas[-1], resposta, trechos)
+        if verificacao["status"] == "atualizada":
+            print(f"[RAG] resposta ATUALIZADA pelos sites: {verificacao['divergencias']}", flush=True)
+            resposta, citados = _extrair_citacoes(verificacao.pop("resposta"), len(trechos))
+    verificacao.pop("resposta", None)
+
+    yield "texto", resposta
+    resultado = {
+        "resposta": resposta,
+        "fontes": _formatar_fontes([trechos[i] for i in sorted(citados)]),
+        "acoes": detectar_acoes(pergunta, resposta),
+        "sugestoes": sugestoes,
+        "verificacao": verificacao,
+    }
+    # Não guarda no cache quando os sites estavam fora do ar: da próxima vez tenta de novo.
+    if chave and resposta and verificacao["status"] != "indisponivel":
         _cache_gravar(chave, resultado)
     yield "fim", dict(resultado, cache=False)
 

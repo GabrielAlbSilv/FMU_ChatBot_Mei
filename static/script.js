@@ -264,6 +264,50 @@ function htmlFontes(fontes) {
     chips.slice(0, MAX_FONTES).join("") + "</div>";
 }
 
+// Só links dos sites do Sebrae e da Receita Federal são exibidos (o servidor já filtra; aqui é uma 2ª barreira).
+function urlOficial(url) {
+  try {
+    const u = new URL(url);
+    const h = u.hostname.toLowerCase();
+    if (u.protocol !== "https:") return false;
+    if (h === "sebrae.com.br" || h.endsWith(".sebrae.com.br")) return true;
+    if (h === "receita.fazenda.gov.br" || h.endsWith(".receita.fazenda.gov.br")) return true;
+    return (h === "gov.br" || h === "www.gov.br") && /^\/receitafederal(\/|$)/i.test(u.pathname);
+  } catch (_) { return false; }
+}
+
+// Selo "conferido com Sebrae e Receita Federal": mostra se os PDFs foram confirmados ou atualizados.
+function htmlVerificacao(v) {
+  if (!v || !v.status || v.status === "nao_aplicavel") return "";
+  const links = (v.fontes_web || []).filter((f) => urlOficial(f.url)).map((f) =>
+    `<a class="fonte" href="${escapar(f.url)}" target="_blank" rel="noopener" title="Abrir a página oficial">` +
+    `${ICONE_EXTERNO}${escapar(f.site)} · ${escapar(String(f.titulo || "página oficial").slice(0, 60))}</a>`
+  ).join("");
+  const data = v.data ? ` em ${escapar(v.data)}` : "";
+  let classe, texto, extra = "";
+  if (v.status === "confirmado") {
+    classe = "ok";
+    texto = `<strong>Conferido com o Sebrae e a Receita Federal${data}.</strong> As informações dos documentos continuam válidas.`;
+  } else if (v.status === "atualizada") {
+    classe = "atualizada";
+    const sites = [...new Set((v.fontes_web || []).map((f) => f.site))].join(" e ") || "Sebrae e Receita Federal";
+    texto = `<strong>Resposta atualizada.</strong> Os documentos (PDFs) estavam desatualizados; usei o que consta no site do ${escapar(sites)}${data}.`;
+    const divs = (v.divergencias || []).filter((d) => d && (d.pdf || d.site));
+    if (divs.length) {
+      extra = '<details class="verif-detalhes"><summary>O que mudou</summary><ul>' + divs.map((d) =>
+        `<li><strong>${escapar(d.tema || "Informação")}:</strong> os PDFs diziam <em>${escapar(d.pdf || "—")}</em>; ` +
+        `o site informa <em>${escapar(d.site || "—")}</em>.</li>`).join("") + "</ul></details>";
+    }
+  } else if (v.status === "inconclusivo") {
+    classe = "neutra";
+    texto = "Não encontrei no Sebrae nem na Receita Federal uma informação que confirme ou corrija esta resposta; ela se baseia nos documentos (PDFs).";
+  } else {
+    classe = "neutra";
+    texto = "Não consegui consultar os sites do Sebrae e da Receita Federal agora. A resposta se baseia nos documentos (PDFs) e pode estar desatualizada.";
+  }
+  return `<div class="verificacao ${classe}"><p>${texto}</p>${extra}${links ? `<div class="fontes-web">${links}</div>` : ""}</div>`;
+}
+
 // Botões que levam ao site oficial para resolver o assunto (emitir DAS, declarar...).
 function htmlAcoes(acoes) {
   if (!acoes || !acoes.length) return "";
@@ -330,11 +374,11 @@ function mostrarErro(texto) {
 // Preenche uma mensagem do bot já concluída: texto, fontes, atalhos e botão copiar.
 // "surgir" = fontes, atalhos e botão copiar aparecem com um leve fade, um após o outro.
 function finalizarBot(partes, dados, surgir = false) {
-  partes.balao.innerHTML = markdownSimples(dados.texto) + htmlFontes(dados.fontes) + htmlAcoes(dados.acoes) + htmlContatoNaf();
+  partes.balao.innerHTML = markdownSimples(dados.texto) + htmlFontes(dados.fontes) + htmlVerificacao(dados.verificacao) + htmlAcoes(dados.acoes) + htmlContatoNaf();
   const ferramentas = document.createElement("div");
   ferramentas.className = "msg-ferramentas";
   if (surgir) {
-    [...partes.balao.querySelectorAll(".fontes, .acoes-portal, .contato-naf"), ferramentas].forEach((el, i) => {
+    [...partes.balao.querySelectorAll(".fontes, .verificacao, .acoes-portal, .contato-naf"), ferramentas].forEach((el, i) => {
       el.classList.add("surgir");
       el.style.animationDelay = `${i * 120}ms`;
     });
@@ -595,7 +639,13 @@ async function enviarPergunta(pergunta) {
       erro = d.erro || "Erro inesperado.";
     } else {
       await lerEventos(r, (ev) => {
-        if (ev.tipo === "texto") {
+        if (ev.tipo === "status") {
+          // etapa em andamento (ex.: "Conferindo com o Sebrae e a Receita Federal…")
+          if (!texto) {
+            partes.balao.innerHTML = '<span class="digitando" aria-hidden="true"><span></span><span></span><span></span></span>' +
+              `<span class="status-etapa">${escapar(ev.conteudo)}</span>`;
+          }
+        } else if (ev.tipo === "texto") {
           texto += ev.conteudo;
           digitador.atualizar(limparCitacoes(texto));
         } else if (ev.tipo === "fim") {
@@ -617,7 +667,7 @@ async function enviarPergunta(pergunta) {
     await digitador.terminou;
     const dados = {
       papel: "assistant", texto: final.resposta, fontes: final.fontes,
-      acoes: final.acoes, sugestoes: final.sugestoes,
+      acoes: final.acoes, sugestoes: final.sugestoes, verificacao: final.verificacao,
     };
     finalizarBot(partes, dados, true);
     mensagens.push({ papel: "user", texto: pergunta }, dados);

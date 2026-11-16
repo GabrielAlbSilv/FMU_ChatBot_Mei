@@ -23,3 +23,10 @@
 	Abra no navegador: http://localhost:5000  (página inicial)  e  http://localhost:5000/chat  (chat)
 
 8. Logo da FMU: fica em static/logo-fmu.png (imagem com fundo transparente).
+
+9. Conferência com Sebrae e Receita Federal (já vem ligada):
+	- Depois de montar a resposta com os PDFs, o bot compara com os sites do Sebrae e da Receita Federal
+	  (SOMENTE esses dois; veja DOMINIOS_PERMITIDOS em verificador.py). Se um dado dos PDFs estiver
+	  desatualizado, ele gera uma nova resposta com base nos sites e avisa o usuário.
+	- Páginas oficiais já conhecidas ficam em fontes_oficiais.json (edite para incluir outras).
+	- Para desligar: VERIFICAR_SITES=0 no .env.  Testes offline: python teste_verificador.py

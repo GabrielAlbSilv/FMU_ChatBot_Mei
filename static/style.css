@@ -358,6 +358,19 @@ a.fonte:hover { border-color: var(--vermelho); color: var(--vermelho); }
 .acao-portal:hover { background: var(--vermelho-escuro); }
 .acao-portal svg { width: 15px; height: 15px; flex-shrink: 0; }
 
+/* conferência com Sebrae e Receita Federal */
+.status-etapa { margin-left: 10px; font-size: 13px; color: var(--suave); vertical-align: middle; }
+.verificacao { margin-top: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--borda); background: var(--card); font-size: 13px; line-height: 1.4; }
+.verificacao p { margin: 0; }
+.verificacao.ok { border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.verificacao.ok p strong { color: var(--ok); }
+.verificacao.atualizada { border-color: var(--vermelho-borda); background: var(--vermelho-claro); }
+.verificacao.neutra p { color: var(--suave); }
+.verif-detalhes { margin-top: 6px; }
+.verif-detalhes summary { cursor: pointer; font-weight: 600; color: var(--vermelho); }
+.verif-detalhes ul { margin: 6px 0 0; padding-left: 18px; }
+.fontes-web { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
 /* contato do NAF (QR Code + e-mail) */
 .contato-naf {
   display: flex; gap: 14px; align-items: center; margin-top: 12px; padding: 12px;
