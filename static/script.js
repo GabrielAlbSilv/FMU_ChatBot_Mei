@@ -1,5 +1,5 @@
 /* =========================================================================
-   Chatbot MEI — página do chat
+   FiscOn (MEI e Receita Federal) — página do chat
    ========================================================================= */
 const areaMensagens = document.getElementById("mensagens");
 const formulario = document.getElementById("formulario");
@@ -111,7 +111,7 @@ function atualizarMensagemTempo() {
   } else if (s > 40) {
     msgCarregando.textContent = "Quase lá… o servidor gratuito demora um pouco para acordar.";
   } else if (s > 12) {
-    msgCarregando.textContent = "Carregando os documentos sobre MEI…";
+    msgCarregando.textContent = "Carregando os documentos sobre MEI e Receita Federal…";
   }
 }
 

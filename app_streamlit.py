@@ -1,4 +1,4 @@
-"""Servidor web do Chatbot MEI (Flask).
+"""FiscOn — Chatbot MEI e Receita Federal (Streamlit).
 
 - Serve a página (static/index.html, style.css, script.js)
 - Expõe a API:  GET /api/status   e   POST /api/chat
@@ -232,7 +232,7 @@ def iniciar_rag():
 
     # Configura o modelo de linguagem acessado pela Groq
     # O LLM será responsável por gerar as respostas
-    # com base nos trechos recuperados dos documentos do MEI
+    # com base nos trechos recuperados dos documentos do MEI e da Receita Federal
     # Configura a temperatura do modelo, que influencia a variabilidade das respostas.
     # Valores menores tendem a produzir respostas mais consistentes e menos variadas.
     llm = ChatGroq(
@@ -321,7 +321,7 @@ if pergunta := st.chat_input("Digite sua pergunta..."):
 
                 # Monta as instruções enviadas ao modelo de linguagem
                 prompt = f"""
-                Você é o FiscOn, um assistente especializado em Microempreendedor Individual (MEI) e Cartilhas da Receita federal.
+                Você é o FiscOn, um assistente especializado em Microempreendedor Individual (MEI) e Receita Federal (impostos, CPF, CNPJ e declarações).
 
                 Responda utilizando apenas as informações
                 dos documentos fornecidos abaixo.

@@ -1,4 +1,4 @@
-"""Servidor web do Chatbot MEI (Flask).
+"""Servidor web do FiscOn — Chatbot MEI e Receita Federal (Flask).
 
 - Serve a página (static/index.html, style.css, script.js)
 - Expõe a API:  GET /api/status   e   POST /api/chat
