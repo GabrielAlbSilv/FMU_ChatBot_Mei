@@ -322,7 +322,7 @@ def iniciar_rag():
 # ------------------------------------------------------------- geração de resposta
 # Edite à vontade: é assim que o bot se apresenta quando perguntam quem ele é.
 SOBRE_O_BOT = """\
-- Nome: Chatbot MEI e Receita Federal (assistente virtual).
+- Nome: FiscOn: Chatbot MEI e Receita Federal (assistente virtual).
 - Função: tirar dúvidas sobre o Microempreendedor Individual (MEI) e Receita Federal — o que é, quem
   pode ser, como abrir (formalizar), impostos e o boleto mensal (DAS), declaração
   anual (DASN-SIMEI), limites de faturamento, nota fiscal, contratação de empregado,

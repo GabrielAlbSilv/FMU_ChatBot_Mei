@@ -121,7 +121,7 @@ if not os.getenv("GROQ_API_KEY"):
 #2. INTERFACE INICIAL
 
 # Exibe o título principal da aplicação
-st.title("Chatbot MEI e Receita Federal")
+st.title("FiscOn: Chatbot MEI e Receita Federal")
 
 # Exibe uma mensagem de orientação ao usuário
 st.write("Faça perguntas sobre o Microempreendedor Individual (MEI) ou Receita Federal.")
@@ -321,7 +321,7 @@ if pergunta := st.chat_input("Digite sua pergunta..."):
 
                 # Monta as instruções enviadas ao modelo de linguagem
                 prompt = f"""
-                Você é um assistente especializado em Microempreendedor Individual (MEI) e Cartilhas da Receita federal.
+                Você é o FiscOn, um assistente especializado em Microempreendedor Individual (MEI) e Cartilhas da Receita federal.
 
                 Responda utilizando apenas as informações
                 dos documentos fornecidos abaixo.
