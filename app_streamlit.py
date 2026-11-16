@@ -330,11 +330,6 @@ if pergunta := st.chat_input("Digite sua pergunta..."):
                 Se não encontrar a resposta, informe que
                 a informação não foi localizada nos documentos.
 
-                Para mais informações, entrar em contato com o NAF - Núcleo de Apoio Fiscal
-                Email: naf@fmu.br
-                Formulário: QR - Code:
-                <img src="Qr_Code_NAF.jpg" alt="">
-                
                 Contexto:
                 {contexto}
 
@@ -347,6 +342,15 @@ if pergunta := st.chat_input("Digite sua pergunta..."):
 
                 # Exibe a resposta na interface
                 st.markdown(resposta)
+
+                # Contato do NAF (fixo, fora do prompt, para o modelo não alterar)
+                st.markdown(
+                    "**Para mais informações, entre em contato com o NAF - Núcleo de Apoio Fiscal**  \n"
+                    "E-mail: [naf@fmu.br](mailto:naf@fmu.br)  \n"
+                    "[Abrir o formulário](https://forms.cloud.microsoft/r/qweuKC6AxF)"
+                )
+                st.image(os.path.join(os.path.dirname(__file__), "static", "Qr_Code_NAF.jpg"),
+                         caption="QR Code do formulário do NAF", width=160)
 
                 # Armazena a resposta no histórico
                 st.session_state.mensagens.append({

@@ -273,6 +273,25 @@ function htmlAcoes(acoes) {
   ).join("") + "</div>";
 }
 
+// Contato do NAF (Núcleo de Apoio Fiscal) exibido ao fim de cada resposta.
+const NAF_EMAIL = "naf@fmu.br";
+const NAF_FORMULARIO = "https://forms.cloud.microsoft/r/qweuKC6AxF";   // o mesmo link do QR Code
+const NAF_QR = "Qr_Code_NAF.jpg";
+
+function htmlContatoNaf() {
+  return '<div class="contato-naf">' +
+    `<a class="naf-qr" href="${NAF_FORMULARIO}" target="_blank" rel="noopener" title="Abrir o formulário do NAF">` +
+      `<img src="${NAF_QR}" alt="QR Code do formulário do NAF" width="96" height="96" loading="lazy">` +
+    '</a>' +
+    '<div class="naf-texto">' +
+      '<strong>Quer saber mais?</strong>' +
+      '<span>Fale com o NAF — Núcleo de Apoio Fiscal da FMU.</span>' +
+      `<a href="mailto:${NAF_EMAIL}">${NAF_EMAIL}</a>` +
+      `<a href="${NAF_FORMULARIO}" target="_blank" rel="noopener">Abrir o formulário</a>` +
+      '<small>Ou aponte a câmera do celular para o QR Code.</small>' +
+    '</div></div>';
+}
+
 function rolarParaBaixo(suave = true) {
   requestAnimationFrame(() => {
     areaMensagens.scrollTo({ top: areaMensagens.scrollHeight, behavior: suave ? "smooth" : "auto" });
@@ -312,11 +331,11 @@ function mostrarErro(texto) {
 // Preenche uma mensagem do bot já concluída: texto, fontes, atalhos e botão copiar.
 // "surgir" = fontes, atalhos e botão copiar aparecem com um leve fade, um após o outro.
 function finalizarBot(partes, dados, surgir = false) {
-  partes.balao.innerHTML = markdownSimples(dados.texto) + htmlFontes(dados.fontes) + htmlAcoes(dados.acoes);
+  partes.balao.innerHTML = markdownSimples(dados.texto) + htmlFontes(dados.fontes) + htmlAcoes(dados.acoes) + htmlContatoNaf();
   const ferramentas = document.createElement("div");
   ferramentas.className = "msg-ferramentas";
   if (surgir) {
-    [...partes.balao.querySelectorAll(".fontes, .acoes-portal"), ferramentas].forEach((el, i) => {
+    [...partes.balao.querySelectorAll(".fontes, .acoes-portal, .contato-naf"), ferramentas].forEach((el, i) => {
       el.classList.add("surgir");
       el.style.animationDelay = `${i * 120}ms`;
     });

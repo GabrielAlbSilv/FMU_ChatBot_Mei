@@ -358,6 +358,20 @@ a.fonte:hover { border-color: var(--vermelho); color: var(--vermelho); }
 .acao-portal:hover { background: var(--vermelho-escuro); }
 .acao-portal svg { width: 15px; height: 15px; flex-shrink: 0; }
 
+/* contato do NAF (QR Code + e-mail) */
+.contato-naf {
+  display: flex; gap: 14px; align-items: center; margin-top: 12px; padding: 12px;
+  border: 1px solid var(--vermelho-borda); border-radius: 12px; background: var(--vermelho-claro);
+}
+.naf-qr { flex-shrink: 0; display: block; padding: 6px; border-radius: 10px; background: #fff; line-height: 0; }
+.naf-qr img { width: 96px; height: 96px; object-fit: contain; display: block; }
+.naf-texto { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 13.5px; line-height: 1.35; }
+.naf-texto span, .naf-texto small { color: var(--suave); }
+.naf-texto small { font-size: 12px; }
+.naf-texto a { color: var(--vermelho); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.naf-texto a:hover { text-decoration: underline; }
+@media (max-width: 420px) { .contato-naf { flex-direction: column; align-items: flex-start; } }
+
 /* barra abaixo da resposta (copiar) */
 .msg-ferramentas { display: flex; gap: 4px; margin-top: 4px; padding-left: 4px; }
 .botao-ferramenta {
