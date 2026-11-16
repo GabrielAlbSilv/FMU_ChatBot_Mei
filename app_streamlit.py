@@ -330,6 +330,11 @@ if pergunta := st.chat_input("Digite sua pergunta..."):
                 Se não encontrar a resposta, informe que
                 a informação não foi localizada nos documentos.
 
+                Para mais informações, entrar em contato com o NAF - Núcleo de Apoio Fiscal
+                Email: naf@fmu.br
+                Formulário: QR - Code:
+                <img src="Qr_Code_NAF.jpg" alt="">
+                
                 Contexto:
                 {contexto}
 
