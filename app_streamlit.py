@@ -347,10 +347,10 @@ if pergunta := st.chat_input("Digite sua pergunta..."):
                 st.markdown(
                     "**Para agendamento presencial ou online, entre em contato com o NAF - Núcleo de Apoio Fiscal**  \n"
                     "E-mail: [naf@fmu.br](mailto:naf@fmu.br)  \n"
-                    "[Formulário agendamento:(https://forms.cloud.microsoft/r/qweuKC6AxF)"
+                    "[Formulário agendamento](https://forms.cloud.microsoft/r/qweuKC6AxF)"
                 )
                 st.image(os.path.join(os.path.dirname(__file__), "static", "Qr_Code_NAF.jpg"),
-                         caption="QR Code do formulário do NAF", width=160)
+                         caption="QR Code do formulário de agendamento", width=160)
 
                 # Armazena a resposta no histórico
                 st.session_state.mensagens.append({

@@ -280,14 +280,13 @@ const NAF_QR = "Qr_Code_NAF.jpg";
 
 function htmlContatoNaf() {
   return '<div class="contato-naf">' +
-    `<a class="naf-qr" href="${NAF_FORMULARIO}" target="_blank" rel="noopener" title="Abrir o formulário do NAF">` +
-      `<img src="${NAF_QR}" alt="QR Code do formulário do NAF" width="96" height="96" loading="lazy">` +
+    `<a class="naf-qr" href="${NAF_FORMULARIO}" target="_blank" rel="noopener" title="Abrir o formulário de agendamento">` +
+      `<img src="${NAF_QR}" alt="QR Code do formulário de agendamento do NAF" width="96" height="96" loading="lazy">` +
     '</a>' +
     '<div class="naf-texto">' +
-      '<strong>Quer saber mais?</strong>' +
-      '<span>Fale com o NAF — Núcleo de Apoio Fiscal da FMU.</span>' +
-      `<a href="mailto:${NAF_EMAIL}">${NAF_EMAIL}</a>` +
-      `<a href="${NAF_FORMULARIO}" target="_blank" rel="noopener">Abrir o formulário</a>` +
+      '<strong>Para agendamento presencial ou online, entre em contato com o NAF - Núcleo de Apoio Fiscal</strong>' +
+      `<span>E-mail: <a href="mailto:${NAF_EMAIL}">${NAF_EMAIL}</a></span>` +
+      `<a href="${NAF_FORMULARIO}" target="_blank" rel="noopener">Formulário agendamento</a>` +
       '<small>Ou aponte a câmera do celular para o QR Code.</small>' +
     '</div></div>';
 }
