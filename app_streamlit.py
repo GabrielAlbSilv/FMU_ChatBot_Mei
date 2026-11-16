@@ -121,10 +121,10 @@ if not os.getenv("GROQ_API_KEY"):
 #2. INTERFACE INICIAL
 
 # Exibe o título principal da aplicação
-st.title("Chatbot MEI")
+st.title("Chatbot MEI e Receita Federal")
 
 # Exibe uma mensagem de orientação ao usuário
-st.write("Faça perguntas sobre o Microempreendedor Individual (MEI).")
+st.write("Faça perguntas sobre o Microempreendedor Individual (MEI) ou Receita Federal.")
 
 #Para testar: python -m streamlit run app.py
 #ctrl c para parar a execução do streamlit
@@ -306,7 +306,7 @@ if pergunta := st.chat_input("Digite sua pergunta..."):
     with st.chat_message("assistant"):
 
         # Exibe uma mensagem durante o processamento
-        with st.spinner("Consultando os documentos do MEI..."):
+        with st.spinner("Consultando os documentos..."):
 
             try:
                 # Recupera os chunks relevantes para a pergunta
@@ -321,8 +321,7 @@ if pergunta := st.chat_input("Digite sua pergunta..."):
 
                 # Monta as instruções enviadas ao modelo de linguagem
                 prompt = f"""
-                Você é um assistente especializado em Microempreendedor Individual (MEI) e Cartilhas de 
-                Imposto de Renda.
+                Você é um assistente especializado em Microempreendedor Individual (MEI) e Cartilhas da Receita federal.
 
                 Responda utilizando apenas as informações
                 dos documentos fornecidos abaixo.

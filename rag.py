@@ -322,8 +322,8 @@ def iniciar_rag():
 # ------------------------------------------------------------- geração de resposta
 # Edite à vontade: é assim que o bot se apresenta quando perguntam quem ele é.
 SOBRE_O_BOT = """\
-- Nome: Chatbot MEI (assistente virtual).
-- Função: tirar dúvidas sobre o Microempreendedor Individual (MEI) — o que é, quem
+- Nome: Chatbot MEI e Receita Federal (assistente virtual).
+- Função: tirar dúvidas sobre o Microempreendedor Individual (MEI) e Receita Federal — o que é, quem
   pode ser, como abrir (formalizar), impostos e o boleto mensal (DAS), declaração
   anual (DASN-SIMEI), limites de faturamento, nota fiscal, contratação de empregado,
   benefícios do INSS, dívidas, desenquadramento e como dar baixa (encerrar) o MEI.
@@ -336,7 +336,7 @@ SOBRE_O_BOT = """\
 
 MARCA_SUGESTOES = "@@SUGESTOES:"
 
-SISTEMA = f"""Você é o Chatbot MEI, um assistente virtual simpático, didático e preciso,
+SISTEMA = f"""Você é o Chatbot MEI e Receita Federal, um assistente virtual simpático, didático e preciso,
 especializado em Microempreendedor Individual (MEI) e em tributação básica para
 pequenos empreendedores brasileiros. Responda sempre em português do Brasil.
 
