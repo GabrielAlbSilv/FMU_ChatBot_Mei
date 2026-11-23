@@ -14,7 +14,7 @@ let enviando = false;
 // Conversa atual: [{papel: "user"|"assistant", texto, fontes, acoes, sugestoes}]
 // Fica salva no navegador, então sobrevive a recarregar a página.
 let mensagens = [];
-const MAX_HISTORICO = 6;          // mensagens enviadas ao servidor como contexto
+const MAX_HISTORICO = 10;         // mensagens enviadas ao servidor como contexto (o servidor lê os dados informados em todas)
 const MAX_SALVAS = 40;            // mensagens guardadas no navegador
 const CHAVE_ARMAZENAMENTO = "chatbot-mei-conversa-v1";
 // Em celular/tablet o Enter quebra linha; o envio é pelo botão.
@@ -544,13 +544,42 @@ function mostrarErro(texto, pergunta, msgUsuario) {
 const ICONE_SETA = svg('<path d="M6 9l6 6 6-6"/>');
 const ICONE_INFO = svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>');
 
+// Fonte de uma regra fiscal (regras_fiscais.json): só https em sites oficiais do governo.
+function urlRegraOficial(url) {
+  try {
+    const u = new URL(url);
+    const h = u.hostname.toLowerCase();
+    return u.protocol === "https:" && (h === "gov.br" || h.endsWith(".gov.br") || h.endsWith(".leg.br"));
+  } catch (_) { return false; }
+}
+
+// Selo "Cálculo pelas regras oficiais": valores, limites e prazos calculados pelo servidor
+// (regras_fiscais.py), com o link da fonte de cada regra.
+function htmlRegras(fatos, ajuste) {
+  if (!Array.isArray(fatos) || !fatos.length) return "";
+  const anos = [...new Set(fatos.map((f) => f.ano).filter(Boolean))].join(", ");
+  const aviso = ajuste === "corrigida"
+    ? " A resposta foi refeita com base nesse cálculo."
+    : ajuste === "complementada" ? " Acrescentei o resultado do cálculo ao fim da resposta." : "";
+  const itens = fatos.map((f) => `<li>${escapar(f.resumo || "")}</li>`).join("");
+  const links = [...new Set(fatos.map((f) => f.fonte).filter(urlRegraOficial))].map((url) =>
+    `<a class="fonte" href="${escapar(url)}" target="_blank" rel="noopener" title="Abrir a fonte oficial da regra">` +
+    `${ICONE_EXTERNO}${escapar(new URL(url).hostname.replace(/^www\d*\./, ""))}</a>`).join("");
+  const naoValidado = fatos.some((f) => !f.validado_naf)
+    ? '<p class="verif-motivo">Regra cadastrada pela equipe; confirme na fonte oficial ou com o NAF.</p>' : "";
+  return `<div class="verificacao ok regras"><div class="verif-linha"><span class="verif-icone">${ICONES_VERIFICACAO.ok}</span>` +
+    `<p><strong>Cálculo pelas regras oficiais${anos ? ` de ${escapar(anos)}` : ""}.</strong>${aviso}</p></div>` +
+    `<ul class="regras-lista">${itens}</ul>${naoValidado}${links ? `<div class="fontes-web">${links}</div>` : ""}</div>`;
+}
+
 function htmlDetalhes(dados) {
-  const verificacao = htmlVerificacao(dados.verificacao);
+  const verificacao = htmlRegras(dados.fatos, dados.ajuste_regras) + htmlVerificacao(dados.verificacao);
   const fontes = htmlFontes(dados.fontes, dados.paginas_oficiais);
   const acoes = htmlAcoes(dados.acoes);
   if (!verificacao && !fontes && !acoes) return "";
 
   const resumo = [];
+  if (Array.isArray(dados.fatos) && dados.fatos.length) resumo.push('<span class="resumo-item ok">Cálculo oficial</span>');
   const v = dados.verificacao || {};
   if (v.status === "confirmado") resumo.push('<span class="resumo-item ok">Conferido</span>');
   else if (v.status === "atualizada") resumo.push('<span class="resumo-item atualizada">Atualizada pelo site oficial</span>');
@@ -923,6 +952,7 @@ async function enviarPergunta(pergunta) {
     const dados = {
       papel: "assistant", texto: final.resposta, fontes: final.fontes, paginas_oficiais: final.paginas_oficiais,
       acoes: final.acoes, sugestoes: final.sugestoes, verificacao: final.verificacao,
+      fatos: final.fatos, ajuste_regras: final.ajuste_regras,
     };
     finalizarBot(partes, dados, true);
     // voz.js decide se lê em voz alta (pergunta feita falando / "ler todas as respostas")

@@ -1,0 +1,89 @@
+{
+  "_leia_me": [
+    "Regras e valores oficiais por ano-calendário, usados pelo regras_fiscais.py para CALCULAR as respostas",
+    "(o modelo de linguagem não faz conta: ele só redige a resposta com estes números).",
+    "Atualize todo ano (salário mínimo, teto do MEI, limites do IRPF, prazos) e rode: python testes.py",
+    "validado_naf: true somente depois que a equipe do NAF conferir o valor na fonte indicada.",
+    "Valores em reais com ponto decimal (ex.: 81.05). Datas no formato dd/mm/aaaa."
+  ],
+
+  "mei": {
+    "2025": {
+      "teto_anual": 81000.00,
+      "limite_mensal_proporcional": 6750.00,
+      "salario_minimo": 1518.00,
+      "inss_percentual": 5,
+      "icms": 1.00,
+      "iss": 5.00,
+      "prazo_dasn": "31/05/2026",
+      "fonte": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoMEI.pdf",
+      "validado_naf": false
+    },
+    "2026": {
+      "teto_anual": 81000.00,
+      "limite_mensal_proporcional": 6750.00,
+      "salario_minimo": 1621.00,
+      "inss_percentual": 5,
+      "icms": 1.00,
+      "iss": 5.00,
+      "prazo_dasn": "31/05/2027",
+      "fonte": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoMEI.pdf",
+      "validado_naf": false
+    },
+    "2027": {
+      "teto_anual": 110000.00,
+      "vigente": false,
+      "condicao": "conforme a Lei Complementar nº 238/2026; a ampliação está condicionada à previsão orçamentária, por isso ainda não é tratada como limite em vigor",
+      "fonte": "https://www12.senado.leg.br/noticias",
+      "validado_naf": false
+    }
+  },
+
+  "das_regras": {
+    "devido_sem_faturamento": true,
+    "texto_sem_faturamento": "O DAS do MEI é um valor fixo mensal: é devido todos os meses em que o CNPJ estiver ativo, mesmo sem nenhum faturamento.",
+    "texto_iss": "No DAS do MEI o ISS é um valor FIXO (não é a alíquota municipal de 2% a 5%, que vale para outras empresas).",
+    "vencimento": "dia 20 de cada mês",
+    "fonte": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoMEI.pdf"
+  },
+
+  "desenquadramento": {
+    "percentual_tolerancia": 20,
+    "ate_tolerancia": "efeitos a partir de 1º de janeiro do ano seguinte ao do excesso; o MEI paga, junto com o DAS de janeiro, os tributos sobre o valor que passou do limite (como microempresa do Simples Nacional)",
+    "acima_tolerancia_ano_comum": "efeitos retroativos a 1º de janeiro do próprio ano em que houve o excesso",
+    "acima_tolerancia_ano_abertura": "efeitos retroativos ao início da atividade (mês de abertura do MEI)",
+    "comunicacao": "O desenquadramento deve ser comunicado no Portal do Simples Nacional até o último dia útil do mês seguinte àquele em que o excesso ocorreu.",
+    "fonte": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoMEI.pdf",
+    "validado_naf": false
+  },
+
+  "irpf": {
+    "2024": {
+      "exercicio": 2025,
+      "rendimentos_tributaveis": 33888.00,
+      "isentos_exclusivos": 200000.00,
+      "atividade_rural": 169440.00,
+      "bens_direitos": 800000.00,
+      "prazo": "30/05/2025",
+      "fonte": "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda",
+      "validado_naf": false
+    },
+    "2025": {
+      "exercicio": 2026,
+      "rendimentos_tributaveis": 35584.00,
+      "isentos_exclusivos": 200000.00,
+      "atividade_rural": 177920.00,
+      "bens_direitos": 800000.00,
+      "prazo": "29/05/2026",
+      "fonte": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/marco/receita-comeca-a-receber-declaracoes-do-irpf-no-dia-23-de-marco-prazo-de-entrega-se-encerra-em-29-de-maio",
+      "validado_naf": false
+    }
+  },
+
+  "dirf": {
+    "extinta_a_partir_de": 2025,
+    "texto": "A DIRF foi extinta para pagamentos e retenções a partir de janeiro de 2025: essas informações passaram a ser enviadas pelo eSocial e pela EFD-Reinf (a última DIRF foi a do ano-calendário 2024, entregue em 2025).",
+    "fonte": "https://www.gov.br/receitafederal/pt-br/canais_atendimento/fale-conosco/empresa/suporte-a-dirf",
+    "validado_naf": false
+  }
+}

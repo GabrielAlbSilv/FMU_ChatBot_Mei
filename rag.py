@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-VERSAO = "rag-leve-v11"
+VERSAO = "rag-leve-v12-regras"
 ETAPA = "rag.py novo carregando"
 
 
@@ -41,6 +41,7 @@ import sys  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # app.py carrega este arquivo por caminho
 import verificador  # noqa: E402  (conferência com Sebrae e Receita Federal)
+import regras_fiscais  # noqa: E402  (contas e regras por ano-calendário: DAS, limites, IRPF...)
 
 _etapa("rag importado")
 
@@ -562,10 +563,17 @@ para pequenos empreendedores e pessoas físicas brasileiras. Responda sempre em 
    ajudar, e depois conecte o conceito ao MEI ou à Receita Federal usando os documentos quando houver algo
    relacionado neles.
 4. **Números que mudam com o tempo** (valores do DAS, salário mínimo, limite de
-   faturamento, alíquotas, datas e prazos): use SOMENTE os valores dos documentos e diga
-   que podem ter sido atualizados, recomendando conferir no Portal do Empreendedor. Se
-   o valor não estiver nos documentos, NÃO invente: diga que não encontrou o valor
-   atualizado e indique onde consultar.
+   faturamento, alíquotas, datas e prazos): se vier o bloco **FATOS CALCULADOS**, ele é a
+   fonte principal: use exatamente esses valores, datas e conclusões, sem refazer contas e
+   sem trocar por outro número dos trechos (os trechos podem ser de outro ano). Comece a
+   resposta pela conclusão do fato (ex.: "Não, você está dispensado..." / "Sim, houve
+   excesso de R$ 9.500,00..."). Sem FATOS CALCULADOS, use SOMENTE os valores dos documentos e
+   diga que podem ter sido atualizados, recomendando conferir no Portal do Empreendedor. Se
+   o valor não estiver nos documentos nem nos fatos, NÃO invente: diga que não encontrou o
+   valor atualizado e indique onde consultar.
+   Responda TODAS as partes da pergunta (ex.: "precisa pagar o DAS e entregar a declaração?"
+   pede as duas respostas). Nunca faça a conta de cabeça: comparações como "34 mil é maior que
+   35.584" e limites proporcionais já vêm prontos nos fatos.
 5. **Assuntos fora do escopo** (sem relação com MEI, Receita Federal, empreendedorismo,
    impostos ou finanças do pequeno negócio): diga gentilmente que é especializado em MEI
    e Receita Federal e sugira o tipo de pergunta que pode responder.
@@ -586,8 +594,10 @@ junto da pergunta) para entender "este ano", "ano passado" e prazos, e diga o an
 valor ou prazo se refere quando o documento informar.
 Use o histórico da conversa para entender perguntas de continuação
 ("e se eu atrasar?", "e quanto custa?", "pode explicar melhor?").
-Nunca peça senha da conta gov.br nem dados pessoais completos (CPF, CNPJ, renda); se a
-pessoa enviar, não repita esses dados na resposta.
+Nunca peça senha da conta gov.br nem dados pessoais completos (CPF, CNPJ); se a pessoa
+enviar, não repita esses dados na resposta. Valores que a pessoa informou para um cálculo
+(faturamento, rendimentos) podem ser usados na resposta.
+Os FATOS CALCULADOS não têm número de trecho: não coloque colchetes para eles.
 
 ## Citações
 Os trechos vêm numerados como [1], [2], ... Ao usar uma informação de um trecho,
@@ -654,9 +664,12 @@ def _opcoes_modelo(modelo, esforco):
     return {"reasoning_effort": esforco} if "gpt-oss" in modelo else {}
 
 
-def reescrever_consulta(cliente, pergunta, historico):
+def reescrever_consulta(cliente, pergunta, historico, situacao=""):
     """Usa o LLM para transformar a pergunta numa consulta rica para a busca.
 
+    `situacao`: dados que o usuário já informou na conversa (ex.: "MEI aberto em 07/2026;
+    faturamento R$ 50.000,00"), extraídos por regras_fiscais — assim a busca não perde o mês de
+    abertura quando ele foi dito duas mensagens atrás.
     Se der qualquer erro, devolve None e a busca segue só com a pergunta original.
     """
     conversa = "\n".join(
@@ -664,6 +677,7 @@ def reescrever_consulta(cliente, pergunta, historico):
         for m in historico[-4:]
     )
     entrada = (f"Histórico recente:\n{conversa}\n\n" if conversa else "") + \
+        (f"Dados já informados pelo usuário: {situacao}\n\n" if situacao else "") + \
         f"Última pergunta do usuário: {pergunta}"
     global _modelo_reescrita
     for tentativa in range(2):
@@ -880,15 +894,20 @@ def _hoje():
     return datetime.now(verificador.FUSO_BR).strftime("%d/%m/%Y")
 
 
-def montar_mensagens(trechos, pergunta, historico):
+def montar_mensagens(trechos, pergunta, historico, fatos=None, situacao=""):
     if trechos:
         contexto = "\n\n".join(f"[{i}] {_cabecalho_trecho(t)}\n{t['texto']}"
                                for i, t in enumerate(trechos, start=1))
         bloco = f"Trechos recuperados dos documentos sobre MEI e Receita Federal:\n{contexto}"
+    elif fatos:
+        bloco = "(Nenhum trecho de documento foi encontrado; responda com os FATOS CALCULADOS acima.)"
     else:
         bloco = ("(Nenhum trecho de documento foi buscado: a mensagem parece ser uma saudação, "
                  "agradecimento ou pergunta sobre você. Responda com base na seção \"Sobre você\".)")
-    usuario = f"{bloco}\n\n---\nData de hoje: {_hoje()}\nPergunta do usuário: {pergunta}"
+    if fatos:   # os fatos vêm ANTES dos trechos: têm prioridade
+        bloco = f"{regras_fiscais.bloco_prompt(fatos)}\n\n{bloco}"
+    dados = f"\nDados já informados pelo usuário nesta conversa: {situacao}" if situacao else ""
+    usuario = f"{bloco}\n\n---\nData de hoje: {_hoje()}{dados}\nPergunta do usuário: {pergunta}"
     return ([{"role": "system", "content": SISTEMA}] + historico +
             [{"role": "user", "content": usuario}])
 
@@ -962,14 +981,32 @@ def responder_stream(indice, cliente, pergunta, historico=None):
       ("status", mensagem) -> etapa em andamento ("Consultando os documentos…", "Conferindo…")
       ("texto", pedaço)   -> trecho novo da resposta (pode conter marcadores [n])
       ("fim", resultado)  -> {"resposta", "fontes", "paginas_oficiais", "acoes", "sugestoes",
-                              "verificacao", "substituida", "cache"}
+                              "verificacao", "fatos", "ajuste_regras", "substituida", "cache"}
     Erros da Groq (ex.: limite de uso) são propagados como exceção.
+
+    Regras fiscais: antes de chamar o modelo, regras_fiscais.py calcula os fatos da pergunta
+    (limites, DAS, IRPF, desenquadramento...) com TODO o histórico do usuário — não só as últimas
+    mensagens —, e no fim a resposta é conferida com esses fatos (ver _aplicar_regras).
 
     Velocidade: a coleta das páginas oficiais para a conferência começa EM PARALELO com a
     resposta; no modo "depois" (padrão) a pessoa já lê a resposta enquanto ela é conferida.
     """
-    historico = _sanear_historico(historico)
-    chave = None if historico else _chave_cache(pergunta)
+    historico_bruto = historico if isinstance(historico, list) else []
+    historico = _sanear_historico(historico_bruto)
+    conversa = eh_conversa_simples(pergunta)
+    fatos, situacao = [], ""
+    if not conversa:
+        try:
+            fatos = regras_fiscais.fatos_para(pergunta, historico_bruto)
+            situacao = regras_fiscais.resumo_situacao(regras_fiscais.extrair_situacao(pergunta, historico_bruto))
+        except Exception as erro:  # noqa: BLE001  (regra quebrada não pode derrubar o chat)
+            print(f"[RAG] regras fiscais falharam: {type(erro).__name__}: {erro}", flush=True)
+            fatos, situacao = [], ""
+        if fatos:
+            print(f"[RAG] fatos calculados: {[f['tema'] for f in fatos]} | situação: {situacao}", flush=True)
+
+    # Respostas com fatos dependem dos valores informados: não usam o cache.
+    chave = None if (historico or fatos) else _chave_cache(pergunta)
     if chave:
         pronto = _cache_ler(chave)
         if pronto:
@@ -977,33 +1014,33 @@ def responder_stream(indice, cliente, pergunta, historico=None):
             yield "fim", dict(pronto, cache=True)
             return
 
-    conversa = eh_conversa_simples(pergunta)
     consultas = [pergunta]
     if conversa:
         trechos = []
         print(f"[RAG] conversa simples (sem busca): {pergunta!r}", flush=True)
     else:
-        reescrita = reescrever_consulta(cliente, pergunta, historico) if REESCREVER_CONSULTA else None
+        reescrita = (reescrever_consulta(cliente, pergunta, historico, situacao)
+                     if REESCREVER_CONSULTA else None)
         if reescrita:
             consultas.append(reescrita)
-        elif historico:
-            # Sem reescrita: junta a última pergunta do usuário para dar contexto à busca.
+        elif historico or situacao:
+            # Sem reescrita: junta a última pergunta do usuário e os dados já informados.
             anteriores = [m["content"] for m in historico if m["role"] == "user"]
-            if anteriores:
-                consultas.append(f"{anteriores[-1]} {pergunta}")
+            consultas.append(" ".join(filter(None, [anteriores[-1] if anteriores else "", situacao, pergunta])))
         print(f"[RAG] consultas: {consultas}", flush=True)
         trechos = indice.buscar_varias(consultas) + trechos_da_web(consultas[-1])
 
     conferir = verificador.ATIVO and not conversa
     # Começa já a juntar as páginas oficiais (base local -> internet), enquanto o modelo escreve.
     coleta = _executor.submit(verificador.coletar_trechos, consultas[-1]) if conferir else None
+    mensagens = montar_mensagens(trechos, pergunta, historico, fatos, situacao)
 
     if conferir and CONFERENCIA_MODO == "antes":
-        yield from _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico, chave, coleta)
+        yield from _responder_com_conferencia(cliente, trechos, consultas, pergunta, mensagens, chave, coleta, fatos)
         return
 
     completo = ""
-    for tipo, dado in _gerar_texto(cliente, montar_mensagens(trechos, pergunta, historico)):
+    for tipo, dado in _gerar_texto(cliente, mensagens):
         if tipo == "texto":
             yield "texto", dado
         else:
@@ -1014,15 +1051,40 @@ def responder_stream(indice, cliente, pergunta, historico=None):
     verificacao, substituida = {"status": "nao_aplicavel"}, False
     if conferir and resposta and verificador.deve_verificar(pergunta, bool(citados)):
         yield "status", "Conferindo com o Sebrae e a Receita Federal…"
-        resposta, citados, verificacao = _conferir(cliente, pergunta, consultas, resposta, citados, trechos, coleta)
+        resposta, citados, verificacao = _conferir(cliente, pergunta, consultas, resposta, citados, trechos,
+                                                   coleta, fatos)
         substituida = verificacao["status"] == "atualizada"
     elif coleta:
         coleta.cancel()
-    yield "fim", dict(_montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificacao, chave),
+    resposta, citados, ajuste = _aplicar_regras(resposta, citados, fatos)
+    substituida = substituida or ajuste == "corrigida"
+    yield "fim", dict(_montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificacao, chave,
+                                        fatos, ajuste),
                       substituida=substituida, cache=False)
 
 
-def _conferir(cliente, pergunta, consultas, resposta, citados, trechos, coleta):
+_MARCA_FATO = re.compile(r"\s?\[\s*F\d{1,2}\s*\]")
+
+
+def _aplicar_regras(resposta, citados, fatos):
+    """Confere a resposta com os fatos calculados. Devolve (resposta, citados, ajuste).
+
+    - faltou um valor-chave (ex.: R$ 86,05)  -> acrescenta "Conferência automática" ("complementada");
+    - contradiz a regra (ex.: "precisa declarar" com R$ 34 mil; efeito em 01/01/2027 com excesso
+      acima de 20%; "não encontrei")         -> troca pela resposta montada com os fatos ("corrigida").
+    """
+    resposta = _MARCA_FATO.sub("", resposta or "")
+    if not fatos:
+        return resposta, citados, None
+    final, ajuste, motivos = regras_fiscais.garantir(resposta, fatos)
+    if ajuste:
+        print(f"[RAG] resposta {ajuste.upper()} pelas regras fiscais: {motivos}", flush=True)
+    if ajuste == "corrigida":
+        citados = set()            # a resposta nova vem só dos fatos (as fontes deles vão em "fatos")
+    return final, citados, ajuste
+
+
+def _conferir(cliente, pergunta, consultas, resposta, citados, trechos, coleta, fatos=None):
     """Compara a resposta com as páginas oficiais. Devolve (resposta, citados, verificacao)."""
     trechos_web = None
     if coleta is not None:
@@ -1033,7 +1095,7 @@ def _conferir(cliente, pergunta, consultas, resposta, citados, trechos, coleta):
             trechos_web = []
     verificacao = verificador.verificar(
         cliente, MODELO_VERIFICACAO, _opcoes_modelo(MODELO_VERIFICACAO, "low"),
-        pergunta, consultas[-1], resposta, trechos, trechos_web=trechos_web)
+        pergunta, consultas[-1], resposta, trechos, trechos_web=trechos_web, fatos=fatos)
     if verificacao["status"] == "atualizada":
         print(f"[RAG] resposta ATUALIZADA pelos sites: {verificacao['divergencias']}", flush=True)
         resposta, citados = _extrair_citacoes(verificacao.pop("resposta"), len(trechos))
@@ -1041,7 +1103,8 @@ def _conferir(cliente, pergunta, consultas, resposta, citados, trechos, coleta):
     return resposta, citados, verificacao
 
 
-def _montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificacao, chave):
+def _montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificacao, chave,
+                      fatos=None, ajuste=None):
     usados = [trechos[i] for i in sorted(citados)]
     resultado = {
         "resposta": resposta,
@@ -1050,6 +1113,9 @@ def _montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificac
         "acoes": detectar_acoes(pergunta, resposta),
         "sugestoes": sugestoes,
         "verificacao": verificacao,
+        # regras oficiais usadas no cálculo (a tela mostra o selo e o link da fonte de cada uma)
+        "fatos": regras_fiscais.fatos_publicos(fatos or []),
+        "ajuste_regras": ajuste,
     }
     # Não guarda no cache quando os sites estavam fora do ar: da próxima vez tenta de novo.
     if chave and resposta and verificacao.get("status") != "indisponivel":
@@ -1057,7 +1123,7 @@ def _montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificac
     return resultado
 
 
-def _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico, chave, coleta=None):
+def _responder_com_conferencia(cliente, trechos, consultas, pergunta, mensagens, chave, coleta=None, fatos=None):
     """Modo "antes": rascunho (PDFs) -> comparação com Sebrae/Receita Federal -> resposta final.
 
     O rascunho NÃO é mostrado: o usuário só vê a versão já conferida (ou a dos PDFs, se não
@@ -1068,7 +1134,7 @@ def _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico,
         model=MODELO_LLM,
         temperature=0.2,
         stream=False,
-        messages=montar_mensagens(trechos, pergunta, historico),
+        messages=mensagens,
         **_opcoes_modelo(MODELO_LLM, ESFORCO_RESPOSTA),
     )
     completo = r.choices[0].message.content or ""
@@ -1078,12 +1144,15 @@ def _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico,
 
     if resposta and verificador.deve_verificar(pergunta, bool(citados)):
         yield "status", "Conferindo com o Sebrae e a Receita Federal…"
-        resposta, citados, verificacao = _conferir(cliente, pergunta, consultas, resposta, citados, trechos, coleta)
+        resposta, citados, verificacao = _conferir(cliente, pergunta, consultas, resposta, citados, trechos,
+                                                   coleta, fatos)
     elif coleta is not None:
         coleta.cancel()
+    resposta, citados, ajuste = _aplicar_regras(resposta, citados, fatos)
 
     yield "texto", resposta
-    yield "fim", dict(_montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificacao, chave),
+    yield "fim", dict(_montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificacao, chave,
+                                        fatos, ajuste),
                       substituida=False, cache=False)
 
 

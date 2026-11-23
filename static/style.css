@@ -457,6 +457,9 @@ a.fonte:hover { border-color: var(--vermelho-borda); color: var(--vermelho); bac
 .verificacao.atualizada { border-color: var(--vermelho-borda); background: var(--vermelho-claro); }
 .verificacao.atualizada .verif-icone { color: var(--vermelho); }
 .verificacao.neutra p { color: var(--suave); }
+.verificacao.regras { margin-bottom: 8px; }
+.regras-lista { margin: 6px 0 0 24px; padding-left: 16px; font-size: 12.5px; }
+.regras-lista li + li { margin-top: 3px; }
 .verif-motivo { margin: 6px 0 0 24px !important; font-size: 12px; color: var(--suave); }
 .verif-detalhes { margin: 6px 0 0 24px; }
 .verif-detalhes summary { cursor: pointer; font-weight: 600; color: var(--vermelho); list-style: none; display: inline-flex; align-items: center; gap: 4px; }

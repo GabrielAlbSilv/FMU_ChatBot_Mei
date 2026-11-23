@@ -85,3 +85,23 @@
 	  O botão "Libras" de cada resposta abre o tradutor e destaca a resposta; tocando no texto, o avatar
 	  traduz. Se o site tiver Content-Security-Policy, libere frame-src e font-src para https://vlibras.gov.br
 	  (e font-src para https://cdn.jsdelivr.net).
+
+15. Regras fiscais por ano-calendário (contas feitas pelo código, não pela IA):
+	- regras_fiscais.json guarda, por ano, os valores oficiais: teto e limite proporcional do MEI, salário mínimo,
+	  INSS/ICMS/ISS do DAS, prazo da DASN-SIMEI, regra dos 20% do desenquadramento, limites e prazo do IRPF e a
+	  extinção da DIRF. O regras_fiscais.py faz as contas (ex.: limite proporcional, excesso, % e data de efeito;
+	  34 mil x 35.584) e o resultado entra no prompt como "FATOS CALCULADOS", acima dos trechos dos PDFs.
+	- Depois que a IA responde, a resposta é conferida com esses fatos:
+	    * faltou um valor (ex.: R$ 86,05)            -> acrescenta "Conferência automática" no fim;
+	    * contradiz a regra (ex.: "precisa declarar" com 34 mil, efeito em 01/01/2027 com excesso acima de 20%,
+	      "não encontrei")                          -> a resposta é refeita só com os fatos.
+	  A "Resposta atualizada" pelos sites também é recusada se contradisser um fato.
+	- Os dados que o usuário informa (mês de abertura, faturamento, rendimentos, tipo de atividade) são lidos de
+	  TODA a conversa: "abri em julho de 2026" numa mensagem + "faturei 50 mil" na outra dá o mesmo cálculo.
+	- TODO INÍCIO DE ANO (ou quando a lei mudar), a equipe do NAF deve:
+	    1. atualizar regras_fiscais.json (novo ano em "mei" e "irpf"; o 2027 só vale quando "vigente" não for false);
+	    2. conferir cada valor na "fonte" e trocar "validado_naf" para true;
+	    3. rodar  python testes.py  (offline) e  python avaliar_casos.py  (com a GROQ_API_KEY; gera
+	       relatorio_reteste.md com os casos do relatório de testes para revisão antes da divulgação).
+	- Na tela, o menu "Detalhes da resposta" mostra o selo "Cálculo pelas regras oficiais de <ano>" com o
+	  resumo do cálculo e o link da fonte.

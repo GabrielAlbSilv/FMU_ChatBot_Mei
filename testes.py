@@ -650,6 +650,283 @@ class Velocidade(unittest.TestCase):
                       chamadas[-1]["messages"][-1]["content"])
 
 
+class RegrasFiscais(unittest.TestCase):
+    """Casos do relatório de testes (NAF / FiscOn): contas feitas pelo código, não pelo modelo."""
+
+    @classmethod
+    def setUpClass(cls):
+        import regras_fiscais as R
+        cls.R = R
+
+    def fato(self, pergunta, tema, historico=None):
+        fatos = [f for f in self.R.fatos_para(pergunta, historico) if f["tema"] == tema]
+        self.assertTrue(fatos, f"nenhum fato '{tema}' para: {pergunta}")
+        return fatos[0]
+
+    # ------------------------------------------------------------------ IRPF
+    def test_irpf_limites_abaixo_igual_acima(self):
+        R = self.R
+        self.assertFalse(R.obrigatoriedade_irpf(2025, R._d("35583.99"))["obrigado"])
+        igual = R.obrigatoriedade_irpf(2025, R._d("35584.00"))
+        self.assertFalse(igual["obrigado"])                    # a lei diz "ACIMA de": o valor exato não obriga
+        self.assertTrue(igual["igual_ao_limite"])
+        self.assertTrue(R.obrigatoriedade_irpf(2025, R._d("35584.01"))["obrigado"])
+        self.assertEqual(igual["prazo"], "29/05/2026")
+        self.assertEqual(igual["exercicio"], 2026)
+
+    def test_irpf_34_mil_caso_do_relatorio(self):
+        f = self.fato("Recebi R$ 34 mil em salários tributáveis em 2025, sem outros critérios. "
+                      "Preciso entregar o IRPF 2026? Qual foi o prazo?", "irpf")
+        self.assertFalse(f["conclusao"]["valor"])
+        self.assertIn("dispensado", f["texto"])
+        self.assertIn("R$ 35.584,00", f["texto"])
+        self.assertIn("29/05/2026", f["texto"])
+
+    def test_irpf_valores_no_limite_pelo_texto(self):
+        for texto, obrigado in (("R$ 35.583,99", False), ("R$ 35.584,00", False), ("R$ 35.584,01", True),
+                                ("36 mil", True)):
+            f = self.fato(f"Recebi {texto} de salário em 2025. Preciso declarar o imposto de renda 2026?", "irpf")
+            self.assertEqual(f["conclusao"]["valor"], obrigado, texto)
+
+    # ------------------------------------------------------- MEI: limite e excesso
+    def test_limite_proporcional_e_20_por_cento(self):
+        R = self.R
+        r = R.avaliar_excesso(R._d("50000"), 2026, 7, 2026)
+        self.assertEqual(r["limite"]["valor"], R._d("40500"))
+        self.assertEqual(r["excesso"], R._d("9500"))
+        self.assertEqual(R.pct(r["percentual"]), "23,46%")
+        self.assertTrue(r["acima_tolerancia"])
+        self.assertEqual(r["efeito"], "07/2026")            # retroativo ao início da atividade
+        exato = R.avaliar_excesso(R._d("48600"), 2026, 7, 2026)   # excesso de exatamente 20%
+        self.assertFalse(exato["acima_tolerancia"])
+        self.assertEqual(exato["efeito"], "01/01/2027")
+        acima = R.avaliar_excesso(R._d("48600.01"), 2026, 7, 2026)
+        self.assertTrue(acima["acima_tolerancia"])
+        self.assertEqual(acima["efeito"], "07/2026")
+        self.assertFalse(R.avaliar_excesso(R._d("40500"), 2026, 7, 2026)["houve_excesso"])
+        # fora do ano de abertura: teto anual e retroatividade a 1º de janeiro
+        comum = R.avaliar_excesso(R._d("100000"), 2026, 7, 2025)
+        self.assertEqual(comum["limite"]["valor"], R._d("81000"))
+        self.assertEqual(comum["efeito"], "01/01/2026")
+
+    def test_caso_decisivo_uma_mensagem_e_duas_mensagens(self):
+        unica = self.fato("Um MEI abriu em julho de 2026 e faturou R$ 50 mil até dezembro. Houve excesso?", "excesso")
+        historico = [{"papel": "user", "texto": "Abri o MEI em julho de 2026."},
+                     {"papel": "assistant", "texto": "Certo! O teto anual do MEI é de R$ 81.000,00."}]
+        duas = self.fato("Faturei R$ 50 mil até dezembro. Houve excesso?", "excesso", historico)
+        self.assertEqual(unica["texto"], duas["texto"])
+        for f in (unica, duas):
+            self.assertIn("R$ 40.500,00", f["texto"])
+            self.assertIn("R$ 9.500,00", f["texto"])
+            self.assertIn("23,46%", f["texto"])
+            self.assertIn("julho de 2026", f["texto"])
+            self.assertNotIn("2027", f["texto"])
+        # continuação sem números ("e quando começa?") herda tema e dados da pergunta anterior
+        historico = [{"papel": "user", "texto": "Um MEI abriu em julho de 2026 e faturou R$ 50 mil até dezembro. "
+                                                "Houve excesso?"},
+                     {"papel": "assistant", "texto": "Sim, houve excesso."}]
+        cont = self.fato("E quando começa o desenquadramento?", "excesso", historico)
+        self.assertEqual(cont["texto"], unica["texto"])
+
+    def test_sequencia_do_teste_do_naf(self):
+        # 1) pergunta completa, 2) limite perguntado à parte, 3) continuação — o NAF voltou ao teto de 81 mil aqui
+        p1 = "Um MEI abriu em julho de 2026 e faturou R$ 50 mil até dezembro. Houve excesso?"
+        p2 = "Qual o limite proporcional para quem abriu em julho de 2026?"
+        # com o faturamento já informado, o fato do limite vem junto do cálculo do excesso
+        fatos = self.R.fatos_para(p2, [{"papel": "user", "texto": p1}])
+        self.assertTrue(fatos)
+        self.assertTrue(all("R$ 40.500,00" in f["texto"] and "81.000" not in f["resumo"] for f in fatos))
+        sozinho = self.fato("Qual o limite do MEI para quem abriu em julho de 2026?", "limite_abertura")
+        self.assertIn("R$ 40.500,00", sozinho["texto"])
+        self.assertEqual(self.R.garantir("O limite do MEI é de R$ 81 mil por ano.", [sozinho])[1], "corrigida")
+        historico = [{"papel": "user", "texto": p1}, {"papel": "assistant", "texto": "Não encontrei a informação."},
+                     {"papel": "user", "texto": p2}, {"papel": "assistant", "texto": "O limite é R$ 40.500,00."}]
+        cont = self.fato("Então houve excesso?", "excesso", historico)
+        self.assertEqual(cont["texto"], self.fato(p1, "excesso")["texto"])
+        self.assertEqual(self.R.garantir("Não houve excesso, pois R$ 50 mil está abaixo do teto anual de R$ 81 mil.",
+                                         [cont])[1], "corrigida")
+        self.assertEqual([f["tema"] for f in self.R.fatos_para("Qual o limite do MEI em 2026?")], ["teto"])
+
+    def test_numero_do_teto_nao_vira_faturamento(self):
+        historico = [{"papel": "user", "texto": "Um MEI abriu em julho de 2026 e faturou R$ 50 mil até dezembro."}]
+        sit = self.R.extrair_situacao("Então não houve excesso, já que o teto do MEI é de 81 mil?", historico)
+        self.assertEqual(sit["faturamento"], self.R._d("50000"))
+
+    # ---------------------------------------------------------------- DAS
+    def test_das_2026_por_atividade(self):
+        v = self.R.valores_das(2026)
+        self.assertEqual(v["inss"], self.R._d("81.05"))
+        self.assertEqual((v["comercio"], v["servicos"], v["misto"]),
+                         (self.R._d("82.05"), self.R._d("86.05"), self.R._d("87.05")))
+        f = self.fato("Quanto paga de DAS em 2026 um MEI comum que presta exclusivamente serviços?", "das_valor")
+        self.assertIn("R$ 86,05", f["texto"])
+        self.assertIn("R$ 5,00 de ISS", f["texto"])
+        self.assertNotIn("82,05", f["texto"])
+
+    def test_sem_faturamento_das_e_dasn(self):
+        f = self.fato("O MEI ficou ativo em 2025, sem faturamento. Precisa pagar DAS e entregar a declaração anual?",
+                      "sem_faturamento")
+        self.assertIn("DAS mensal: é devido", f["texto"])
+        self.assertIn("31/05/2026", f["texto"])
+        self.assertIn("zero", f["texto"])
+
+    def test_teto_2026_e_2027_lc_238(self):
+        f = self.fato("Qual era o teto do MEI em 2026 e qual estava previsto para 2027 pela LC nº 238/2026?", "teto")
+        self.assertIn("R$ 81.000,00", f["texto"])
+        self.assertIn("R$ 110.000,00", f["texto"])
+        self.assertIn("orçamentária", f["texto"])
+
+    def test_dirf(self):
+        f = self.fato("Ainda é preciso entregar DIRF em 2026 sobre pagamentos e retenções de 2025?", "dirf")
+        self.assertTrue(f["texto"].startswith("**Não.**"))
+        self.assertIn("eSocial", f["texto"])
+        self.assertIn("EFD-Reinf", f["texto"])
+
+    def test_resposta_dos_fatos_e_coerente(self):
+        for p in ("Recebi R$ 34 mil em salários tributáveis em 2025. Preciso entregar o IRPF 2026?",
+                  "Recebi R$ 40 mil em salários tributáveis em 2025. Preciso entregar o IRPF 2026?",
+                  "Um MEI abriu em julho de 2026 e faturou R$ 50 mil até dezembro. Houve excesso?",
+                  "Um MEI abriu em julho de 2026 e faturou R$ 45 mil até dezembro. Houve excesso?",
+                  "Um MEI abriu em julho de 2026 e faturou R$ 30 mil até dezembro. Houve excesso?",
+                  "Quanto custa o DAS do MEI?", "Quanto paga de DAS em 2026 um MEI de serviços?",
+                  "O MEI ficou ativo em 2025, sem faturamento. Precisa pagar DAS?",
+                  "Qual o teto do MEI em 2026 e 2027?", "Ainda existe DIRF em 2026?"):
+            fatos = self.R.fatos_para(p)
+            self.assertTrue(fatos, p)
+            final, ajuste, motivos = self.R.garantir(self.R.resposta_dos_fatos(fatos), fatos)
+            self.assertIsNone(ajuste, f"{p}: {motivos}")
+
+    # ------------------------------------- respostas erradas do relatório são barradas
+    def test_respostas_erradas_do_relatorio_sao_corrigidas(self):
+        R = self.R
+        casos = [
+            ("Recebi R$ 34 mil em salários tributáveis em 2025, sem outros critérios. Preciso entregar o IRPF 2026?",
+             [], "Sim, você precisa declarar, pois R$ 34 mil supera o limite de obrigatoriedade. O prazo foi 29/05/2026."),
+            ("Um MEI abriu em julho de 2026 e faturou R$ 50 mil até dezembro. Qual foi o excesso e quando começa o "
+             "desenquadramento?", [],
+             "Houve excesso de R$ 9.500 (cerca de 23,5%) sobre o limite proporcional de R$ 40.500. O desenquadramento "
+             "produz efeitos a partir de 01/01/2027."),
+            ("E então, houve excesso?", [{"papel": "user", "texto": "Um MEI abriu em julho de 2026 e faturou R$ 50 mil "
+                                                                    "até dezembro."}],
+             "Não houve excesso, pois R$ 50 mil está abaixo do teto anual de R$ 81 mil."),
+            ("Quanto paga de DAS em 2026 um MEI comum que presta exclusivamente serviços?", [],
+             "O DAS é 5% do salário mínimo mais R$ 6 de ISS."),
+            ("Quanto paga de DAS em 2026 um MEI comum que presta exclusivamente serviços?", [],
+             "O valor é 5% do salário mínimo de INSS. O ISS depende da alíquota municipal, geralmente entre 2% e 5%."),
+            ("Qual era o teto do MEI em 2026 e qual estava previsto para 2027 pela LC nº 238/2026?", [],
+             "Não encontrei essa informação nos documentos. Procure o NAF."),
+        ]
+        for pergunta, historico, errada in casos:
+            fatos = R.fatos_para(pergunta, historico)
+            final, ajuste, motivos = R.garantir(errada, fatos)
+            self.assertEqual(ajuste, "corrigida", f"{pergunta} -> {motivos}")
+            self.assertFalse(R.contradiz(final, fatos))
+
+    def test_resposta_incompleta_e_complementada(self):
+        R = self.R
+        fatos = R.fatos_para("O MEI ficou ativo em 2025, sem faturamento. Precisa pagar DAS e entregar a declaração anual?")
+        final, ajuste, _ = R.garantir("Sim, você deve entregar a DASN-SIMEI informando receita zero até 31/05/2026.", fatos)
+        self.assertEqual(ajuste, "complementada")          # faltou dizer que o DAS continua devido
+        self.assertIn("Conferência automática", final)
+        self.assertIn("DAS mensal continua devido", final)
+
+    def test_resposta_correta_fica_como_esta(self):
+        R = self.R
+        fatos = R.fatos_para("Recebi R$ 34 mil em salários tributáveis em 2025. Preciso entregar o IRPF 2026?")
+        certa = ("**Não, você está dispensado de entregar a declaração do IRPF 2026** por esse critério: só é obrigado "
+                 "quem recebeu mais de R$ 35.584,00 em rendimentos tributáveis em 2025. O prazo foi 29 de maio de 2026.")
+        self.assertEqual(R.garantir(certa, fatos), (certa, None, []))
+        fatos = R.fatos_para("Um MEI abriu em julho de 2026 e faturou R$ 50 mil até dezembro. Houve excesso?")
+        certa = ("Sim, houve excesso de R$ 9.500,00 (23,46%) sobre o limite proporcional de R$ 40.500,00. Como passou "
+                 "de 20%, o desenquadramento é retroativo ao início da atividade, em julho de 2026. Se o excesso fosse "
+                 "de até 20%, os efeitos seriam a partir de 01/01/2027.")       # hipótese não é contradição
+        self.assertIsNone(R.garantir(certa, fatos)[1])
+
+    def test_valores_monetarios_ignoram_anos_datas_e_percentuais(self):
+        valores = [v for _, v in self.R._valores_monetarios("Em 2026, até 31/05/2026, 20% de R$ 1.621,00 e 50k e 34 mil")]
+        self.assertEqual(valores, [self.R._d("1621.00"), self.R._d("50000"), self.R._d("34000")])
+
+
+class RespostasComRegras(unittest.TestCase):
+    """rag.py + verificador.py usando os fatos calculados (sem Groq e sem internet)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import rag
+        cls.rag = rag
+
+    def setUp(self):
+        self.rag._cache.clear()
+        self.indice = types.SimpleNamespace(buscar_varias=lambda consultas, k=8: [
+            {"fonte": "5-Impostos_PF_MEI.pdf", "pagina": 3, "texto": "Está obrigada a declarar quem recebeu..."}])
+        p = mock.patch.object(self.rag, "trechos_da_web", return_value=[])
+        p.start()
+        self.addCleanup(p.stop)
+
+    def _cliente(self, texto, chamadas):
+        def criar(**k):
+            chamadas.append(k)
+            if k.get("stream"):
+                return iter([types.SimpleNamespace(choices=[types.SimpleNamespace(
+                    delta=types.SimpleNamespace(content=texto))])])
+            return Resposta("consulta reescrita")
+        return types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=criar)))
+
+    def test_fatos_vao_no_prompt_e_resposta_errada_e_trocada(self):
+        chamadas = []
+        with mock.patch.object(self.rag.verificador, "ATIVO", False):
+            fim = list(self.rag.responder_stream(
+                self.indice, self._cliente("Sim, você precisa declarar: R$ 34 mil supera o limite [1].", chamadas),
+                "Recebi R$ 34 mil em salários tributáveis em 2025. Preciso entregar o IRPF 2026?", []))[-1][1]
+        prompt = chamadas[-1]["messages"][-1]["content"]
+        self.assertIn("FATOS CALCULADOS", prompt)
+        self.assertLess(prompt.index("FATOS CALCULADOS"), prompt.index("Trechos recuperados"))
+        self.assertEqual(fim["ajuste_regras"], "corrigida")
+        self.assertTrue(fim["substituida"])
+        self.assertIn("dispensado", fim["resposta"])
+        self.assertEqual(fim["fatos"][0]["tema"], "irpf")
+        self.assertTrue(fim["fatos"][0]["fonte"].startswith("https://www.gov.br/"))
+
+    def test_contexto_de_duas_mensagens_chega_na_reescrita_e_no_prompt(self):
+        chamadas = []
+        historico = [{"papel": "user", "texto": "Abri o MEI em julho de 2026."},
+                     {"papel": "assistant", "texto": "Ótimo! Como posso ajudar?"}]
+        with mock.patch.object(self.rag.verificador, "ATIVO", False):
+            fim = list(self.rag.responder_stream(
+                self.indice, self._cliente("Sim, houve excesso de R$ 9.500,00 (23,46%) sobre R$ 40.500,00; os efeitos "
+                                           "são retroativos a julho de 2026.", chamadas),
+                "Faturei R$ 50 mil até dezembro. Houve excesso?", historico))[-1][1]
+        reescrita = chamadas[0]["messages"][-1]["content"]
+        self.assertIn("MEI aberto em 07/2026", reescrita)
+        self.assertIn("R$ 40.500,00", chamadas[-1]["messages"][-1]["content"])
+        self.assertIsNone(fim["ajuste_regras"])           # resposta já correta: não mexe
+        self.assertFalse(fim["substituida"])
+
+    def test_sem_regra_aplicavel_nada_muda(self):
+        chamadas = []
+        with mock.patch.object(self.rag.verificador, "ATIVO", False):
+            fim = list(self.rag.responder_stream(self.indice, self._cliente("Sim, o MEI pode ter um empregado [1].",
+                                                                            chamadas),
+                                                 "O MEI pode contratar um funcionário?", []))[-1][1]
+        self.assertEqual(fim["fatos"], [])
+        self.assertIsNone(fim["ajuste_regras"])
+        self.assertNotIn("FATOS CALCULADOS", chamadas[-1]["messages"][-1]["content"])
+
+    def test_verificador_recusa_atualizacao_que_contradiz_os_fatos(self):
+        import regras_fiscais as R
+        fatos = R.fatos_para("Recebi R$ 34 mil em salários tributáveis em 2025. Preciso entregar o IRPF 2026?")
+        web = [{"url": "https://www.gov.br/receitafederal/pt-br/x", "titulo": "IRPF 2026", "site": "Receita Federal",
+                "texto": "Deve declarar quem recebeu rendimentos tributáveis acima de R$ 35.584,00."}]
+        errada = json.dumps({"veredito": "desatualizado", "motivo": "x", "divergencias": [],
+                             "resposta": "Sim, você precisa declarar, pois R$ 34 mil supera o limite [W1]."})
+        r = v.verificar(ClienteFalso(errada), "m", {}, "p", "c", "rascunho", PDFS, trechos_web=web, fatos=fatos)
+        self.assertEqual(r["status"], "inconclusivo")
+        self.assertNotIn("resposta", r)
+        # sem fatos, o mesmo veredito continua sendo aceito (comportamento anterior)
+        r = v.verificar(ClienteFalso(errada), "m", {}, "p", "c", "rascunho", PDFS, trechos_web=web)
+        self.assertEqual(r["status"], "atualizada")
+
+
 class Voz(unittest.TestCase):
     """Transcrição de voz (voz.py e /api/voz/transcrever), sem Groq de verdade."""
 
