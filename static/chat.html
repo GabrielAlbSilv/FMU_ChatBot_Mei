@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Aplica o tema escolhido antes de desenhar a página (evita piscar) -->
   <script>try{var t=localStorage.getItem("chatbot-mei-tema");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body class="pagina-chat">
 
@@ -74,14 +74,17 @@
         <p>Pergunte sobre abertura do MEI e Receita Federal, impostos (DAS), declaração anual, limites de faturamento, empregados, benefícios e mais.</p>
       </div>
       <div id="sugestoes" class="sugestoes">
-        <button type="button" data-pergunta="Quem pode ser MEI?">Quem pode ser MEI?<span>Requisitos e atividades</span></button>
-        <button type="button" data-pergunta="Quanto o MEI paga de imposto por mês?">Quanto o MEI paga por mês?<span>O boleto DAS</span></button>
-        <button type="button" data-pergunta="Quem precisa declarar Imposto de Renda?">Quem declara Imposto de Renda?<span>Receita Federal</span></button>
-        <button type="button" data-pergunta="O que você sabe fazer?">O que você sabe fazer?<span>Conheça o assistente</span></button>
+        <button type="button" data-pergunta="Quem pode ser MEI?"><span class="sug-icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0114 0M16 11l2 2 4-4"/></svg></span><span class="sug-texto">Quem pode ser MEI?<small>Requisitos e atividades</small></span></button>
+        <button type="button" data-pergunta="Quanto o MEI paga de imposto por mês?"><span class="sug-icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h16v18l-3-2-3 2-2-2-2 2-3-2-3 2z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><span class="sug-texto">Quanto o MEI paga por mês?<small>O boleto DAS</small></span></button>
+        <button type="button" data-pergunta="Quem precisa declarar Imposto de Renda?"><span class="sug-icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M4 10h16M12 3l8 5H4z"/><path d="M6 10v8M10 10v8M14 10v8M18 10v8"/></svg></span><span class="sug-texto">Quem declara Imposto de Renda?<small>Receita Federal</small></span></button>
+        <button type="button" data-pergunta="O que você sabe fazer?"><span class="sug-icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.8H20l-4.9 3.6 1.9 5.8L12 14.6 7 18.2l1.9-5.8L4 8.8h6.1z"/></svg></span><span class="sug-texto">O que você sabe fazer?<small>Conheça o assistente</small></span></button>
       </div>
     </template>
 
     <div class="entrada-area">
+      <button id="ir-fim" type="button" class="ir-fim" aria-label="Ir para a última mensagem" title="Ir para a última mensagem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+      </button>
       <form id="formulario" class="entrada" autocomplete="off">
         <label for="pergunta" class="sr-only">Sua pergunta</label>
         <textarea id="pergunta" rows="1" maxlength="1000" enterkeyhint="send"
@@ -90,6 +93,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
         </button>
       </form>
+      <span id="contador" class="contador" aria-live="polite" hidden></span>
       <p class="aviso">Respostas geradas por IA com base em documentos. Podem conter erros: confirme no Portal do Empreendedor e no Site da Receita Federal. <span id="base-data"></span></p>
     </div>
   </main>
@@ -109,7 +113,7 @@
     </form>
   </dialog>
 
-  <script src="tema.js"></script>
-  <script src="script.js"></script>
+  <script src="tema.js?v=10"></script>
+  <script src="script.js?v=10"></script>
 </body>
 </html>

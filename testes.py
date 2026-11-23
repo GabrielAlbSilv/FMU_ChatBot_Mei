@@ -346,5 +346,105 @@ class Leitura_ao_vivo(unittest.TestCase):
         self.assertEqual(t["site"], "Receita Federal")
 
 
+class Respostas(unittest.TestCase):
+    """Partes do rag.py que não dependem de fastembed nem da Groq."""
+
+    @classmethod
+    def setUpClass(cls):
+        import rag
+        cls.rag = rag
+
+    def test_trechos_vizinhos_sao_fundidos_sem_repetir_texto(self):
+        texto = " ".join(f"palavra{i}" for i in range(400))
+        partes = self.rag._dividir(texto)
+        trechos = [{"fonte": "1-A.pdf", "pagina": 1 + n // 2, "texto": t} for n, (_, t) in enumerate(partes)]
+        trechos.append({"fonte": "2-B.pdf", "pagina": 9, "texto": "outro documento " * 10})
+        ordem = [1, len(trechos) - 1, 2, 0]                  # 0,1,2 são vizinhos no mesmo PDF
+        grupos = self.rag.juntar_vizinhos(trechos, ordem, k=3)
+        self.assertEqual(len(grupos), 2)                          # 4 candidatos viram 2 grupos
+        self.assertEqual(grupos[0]["fonte"], "1-A.pdf")          # o grupo do melhor colocado vem primeiro
+        esperado = " ".join(f"palavra{i}" for i in range(400))
+        self.assertTrue(esperado.startswith(grupos[0]["texto"]))   # colou sem duplicar a sobreposição
+        self.assertEqual(grupos[0]["paginas"], sorted({t["pagina"] for t in trechos[:3]}))
+        self.assertEqual(grupos[1]["fonte"], "2-B.pdf")
+
+    def test_nao_junta_pdfs_diferentes(self):
+        trechos = [{"fonte": "1-A.pdf", "pagina": 1, "texto": "a " * 50},
+                   {"fonte": "2-B.pdf", "pagina": 1, "texto": "b " * 50}]
+        self.assertEqual(len(self.rag.juntar_vizinhos(trechos, [0, 1], k=5)), 2)
+
+    def test_conversa_simples(self):
+        for p in ("oi", "Oi, tudo bem?", "Bom dia FiscOn!", "obrigado pela ajuda", "valeu!",
+                  "O que você sabe fazer?", "quem é você?"):
+            self.assertTrue(self.rag.eh_conversa_simples(p), p)
+        for p in ("quem pode ser MEI?", "como funciona", "ok, e se eu atrasar o DAS?",
+                  "oi, quanto custa o DAS?", "obrigado, e o imposto de renda?", ""):
+            self.assertFalse(self.rag.eh_conversa_simples(p), p)
+
+    def test_sugestoes_com_e_sem_marcador(self):
+        r, s = self.rag._separar_sugestoes("Resposta.\n@@SUGESTOES: E se eu atrasar? | Como emitir o DAS?")
+        self.assertEqual((r, s), ("Resposta.", ["E se eu atrasar?", "Como emitir o DAS?"]))
+        r, s = self.rag._separar_sugestoes("Resposta.\n\n**Sugestões:** - Quem pode ser MEI?\n- Como declarar?")
+        self.assertEqual(r, "Resposta.")
+        self.assertEqual(s, ["Quem pode ser MEI?", "Como declarar?"])
+        texto = "Sugestões: guarde os comprovantes por 5 anos e mantenha o CNPJ em dia. " + "x" * 500
+        self.assertEqual(self.rag._separar_sugestoes(texto)[0], texto.strip())   # não corta texto legítimo
+
+    def test_atalhos_oficiais(self):
+        acoes = self.rag.detectar_acoes("Como emitir o boleto do DAS atrasado?", "Acesse o PGMEI.")
+        self.assertEqual(acoes[0]["icone"], "boleto")
+        self.assertTrue(all(a["url"].startswith("https://") for a in acoes))
+        # IR só aparece se a PESSOA perguntou de IR (não basta a resposta mencionar)
+        self.assertFalse(any(a["icone"] == "leao" for a in
+                             self.rag.detectar_acoes("Quanto é o DAS?", "O MEI não paga imposto de renda no DAS.")))
+        self.assertEqual(self.rag.detectar_acoes("Quem precisa declarar imposto de renda?", "")[0]["icone"], "leao")
+        self.assertEqual(self.rag.detectar_acoes("Meu CPF está pendente de regularização", "")[0]["icone"], "cpf")
+        self.assertEqual(self.rag.detectar_acoes("como tirar o cartão do CNPJ?", "")[0]["icone"], "cnpj")
+
+    def test_sinonimos_de_ir_nao_puxam_o_mei(self):
+        self.assertIn("dasn", self.rag.tokenizar("como declarar o faturamento do MEI", consulta=True))
+        self.assertNotIn("dasn", self.rag.tokenizar("quem precisa declarar imposto de renda", consulta=True))
+
+    def _cliente(self, texto, chamadas):
+        def criar(**k):
+            chamadas.append(k)
+            if k.get("stream"):
+                return iter([types.SimpleNamespace(choices=[types.SimpleNamespace(
+                    delta=types.SimpleNamespace(content=texto[i:i + 7]))]) for i in range(0, len(texto), 7)])
+            return Resposta("consulta reescrita sobre o DAS do MEI")
+        return types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=criar)))
+
+    def test_fluxo_completo_com_citacao_data_e_sugestoes(self):
+        trechos = [{"fonte": "4-Perguntas&Respostas3_MEI.pdf", "pagina": 7, "paginas": [7, 8],
+                    "texto": "O DAS vence no dia 20."}]
+        indice = types.SimpleNamespace(buscar_varias=lambda consultas, k=8: trechos)
+        chamadas = []
+        cliente = self._cliente("O DAS vence no **dia 20** [1].\n@@SUGESTOES: E se eu atrasar? | Como emito o DAS?", chamadas)
+        self.rag._cache.clear()
+        with mock.patch.object(self.rag.verificador, "ATIVO", False):
+            eventos = list(self.rag.responder_stream(indice, cliente, "Quando vence o DAS?", []))
+        texto_mostrado = "".join(d for t, d in eventos if t == "texto")
+        self.assertNotIn("@@", texto_mostrado)                       # a linha de sugestões não vaza
+        fim = eventos[-1][1]
+        self.assertEqual(fim["resposta"], "O DAS vence no **dia 20**.")
+        self.assertEqual(fim["sugestoes"], ["E se eu atrasar?", "Como emito o DAS?"])
+        self.assertEqual(fim["fontes"][0]["paginas"], [7, 8])
+        self.assertIn("rotulo", fim["fontes"][0])
+        self.assertEqual(len(chamadas), 2)                            # reescrita + resposta
+        prompt = chamadas[-1]["messages"][-1]["content"]
+        self.assertIn("Data de hoje:", prompt)
+        self.assertIn("p. 7–8", prompt)
+
+    def test_saudacao_nao_busca_nem_reescreve(self):
+        indice = types.SimpleNamespace(buscar_varias=mock.Mock(side_effect=AssertionError("não devia buscar")))
+        chamadas = []
+        self.rag._cache.clear()
+        with mock.patch.object(self.rag.verificador, "ATIVO", True):   # nem com a conferência ligada
+            eventos = list(self.rag.responder_stream(indice, self._cliente("Olá! Como posso ajudar?", chamadas), "oi", []))
+        self.assertEqual(len(chamadas), 1)
+        self.assertEqual(eventos[-1][1]["resposta"], "Olá! Como posso ajudar?")
+        self.assertEqual(eventos[-1][1]["verificacao"]["status"], "nao_aplicavel")
+
+
 if __name__ == "__main__":
     unittest.main()

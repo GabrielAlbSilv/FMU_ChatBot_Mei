@@ -193,13 +193,54 @@ function escapar(texto) {
   return String(texto).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// Markdown simples e seguro: títulos, negrito, itálico, listas e parágrafos
+// Links na resposta: só viram clicáveis endereços oficiais (gov.br, Sebrae, FMU), sempre em https.
+const DOMINIO_LINK = /^(?:[a-z0-9-]+\.)*(?:gov\.br|sebrae\.com\.br|fmu\.br)$/i;
+const DOMINIO_NO_TEXTO = /(^|[^@\w.\/-])((?:https?:\/\/)?(?:[a-z0-9-]+\.)*(?:gov\.br|sebrae\.com\.br|fmu\.br)(?:\/[^\s<>"*]*)?)/gi;
+
+function linkSeguro(endereco) {
+  try {
+    const bruto = String(endereco).replace(/&amp;/g, "&");
+    const u = new URL(/^https?:\/\//i.test(bruto) ? bruto : "https://" + bruto);
+    if (!DOMINIO_LINK.test(u.hostname) || u.username || u.password) return null;
+    u.protocol = "https:";
+    return u.href;
+  } catch (_) { return null; }
+}
+
+function linkificar(t, guardados) {
+  const guardar = (href, rotulo) => {
+    guardados.push(`<a href="${escapar(href)}" target="_blank" rel="noopener">${rotulo}</a>`);
+    return `\u0000${guardados.length - 1}\u0000`;
+  };
+  return t
+    // [texto](endereço)
+    .replace(/\[([^\]\n]{1,120})\]\(([^\s)]{4,300})\)/g, (m, rotulo, url) => {
+      const href = linkSeguro(url);
+      return href ? guardar(href, rotulo.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")) : rotulo;
+    })
+    // endereço solto: gov.br/mei, https://www.gov.br/receitafederal/...
+    .replace(DOMINIO_NO_TEXTO, (m, antes, url) => {
+      let resto = "";
+      const entidade = url.search(/&(?:quot|lt|gt|#39);/);       // aspas/sinais já escapados
+      if (entidade >= 0) { resto = url.slice(entidade); url = url.slice(0, entidade); }
+      const sobra = (url.match(/[.,;:!?)\]]+$/) || [""])[0];      // pontuação do fim da frase fica fora
+      const limpo = sobra ? url.slice(0, -sobra.length) : url;
+      const href = limpo.includes("\u0000") ? null : linkSeguro(limpo);
+      return href ? antes + guardar(href, limpo) + sobra + resto : m;
+    });
+}
+
+// Markdown simples e seguro: títulos, negrito, itálico, listas, links oficiais e parágrafos
 function markdownSimples(texto) {
   const linhas = escapar(texto).split("\n");
   let html = "", lista = null;
-  const inline = (t) => t
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/(^|\s)\*(?!\s)(.+?)\*(?=\s|$|[.,;:!?])/g, "$1<em>$2</em>");
+  const inline = (t) => {
+    const links = [];
+    return linkificar(t, links)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|\s)\*(?!\s)(.+?)\*(?=\s|$|[.,;:!?])/g, "$1<em>$2</em>")
+      .replace(/\u0000(\d+)\u0000/g, (m, i) => links[Number(i)] || "");
+  };
   const fechar = () => { if (lista) { html += `</${lista}>`; lista = null; } };
 
   for (const linha of linhas) {
@@ -248,6 +289,34 @@ const ICONE_COPIAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const ICONE_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>';
 const MAX_FONTES = 6;
 
+// Ícones de traço (mesmo estilo dos demais): svg("conteúdo do desenho")
+const svg = (d, extra = "") => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${extra}>${d}</svg>`;
+const ICONE_LIVRO = svg('<path d="M4 19.5A2.5 2.5 0 016.5 17H20V3H6.5A2.5 2.5 0 004 5.5z"/><path d="M4 19.5A2.5 2.5 0 006.5 22H20v-5"/>');
+const ICONE_EMAIL = svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>');
+const ICONE_CALENDARIO = svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M8 14h2M14 14h2M8 18h2"/>');
+const ICONE_REPETIR = svg('<path d="M3 12a9 9 0 0115.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 01-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>');
+const ICONE_FONE = svg('<path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="2" y="14" width="5" height="7" rx="2"/><rect x="17" y="14" width="5" height="7" rx="2"/>');
+
+// Botões de atalho (o servidor manda o nome do ícone em "icone"; ver ACOES_PORTAL no rag.py)
+const ICONES_ACAO = {
+  boleto: svg('<path d="M4 3h16v18l-3-2-3 2-2-2-2 2-3-2-3 2z"/><path d="M8 8h8M8 12h8M8 16h5"/>'),
+  declaracao: svg('<path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/><path d="M9 15l2 2 4-4"/>'),
+  abrir: svg('<path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v1.5a3 3 0 01-6 0 3 3 0 01-6 0 3 3 0 01-6 0z"/><path d="M5 13v8h14v-8"/><path d="M10 21v-5h4v5"/>'),
+  servicos: svg('<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M3 13h18"/>'),
+  nota: svg('<path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>'),
+  parcelar: ICONE_CALENDARIO,
+  leao: svg('<path d="M3 21h18M4 10h16M12 3l8 5H4z"/><path d="M6 10v8M10 10v8M14 10v8M18 10v8"/>'),
+  cpf: svg('<rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="11" r="2.5"/><path d="M4.5 16.5a4 4 0 017 0M14 10h5M14 14h3"/>'),
+  cnpj: svg('<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 21v-4h6v4M8 7h2M14 7h2M8 11h2M14 11h2"/>'),
+};
+
+// Selo da conferência com Sebrae/Receita Federal
+const ICONES_VERIFICACAO = {
+  ok: svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>'),
+  atualizada: svg('<path d="M3 12a9 9 0 0115.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 01-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>'),
+  neutra: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
+};
+
 // Chips das fontes: cada página abre o PDF exatamente nela.
 function htmlFontes(fontes) {
   if (!fontes || !fontes.length) return "";
@@ -258,15 +327,18 @@ function htmlFontes(fontes) {
       continue;
     }
     const url = "/documentos/" + encodeURIComponent(f.arquivo);
+    const rotulo = f.rotulo || nomeDocumento(f.arquivo);
+    const titulo = f.titulo || nomeDocumento(f.arquivo);
     for (const p of f.paginas || []) {
       chips.push(
         `<a class="fonte" href="${url}#page=${Number(p)}" target="_blank" rel="noopener" ` +
-        `title="Abrir o documento na página ${Number(p)}">${ICONE_DOC}${escapar(nomeDocumento(f.arquivo))} · p. ${Number(p)}</a>`
+        `title="${escapar(titulo)} — abrir na página ${Number(p)}">${ICONE_DOC}${escapar(rotulo)} · p. ${Number(p)}</a>`
       );
     }
   }
-  return '<div class="fontes"><span class="fontes-titulo">Fontes consultadas (clique para abrir)</span>' +
-    chips.slice(0, MAX_FONTES).join("") + "</div>";
+  const extras = chips.length > MAX_FONTES ? `<span class="fonte fonte-mais">+${chips.length - MAX_FONTES}</span>` : "";
+  return `<div class="fontes"><span class="fontes-titulo">${ICONE_LIVRO}Fontes consultadas (clique para abrir)</span>` +
+    chips.slice(0, MAX_FONTES).join("") + extras + "</div>";
 }
 
 // Só links dos sites do Sebrae e da Receita Federal são exibidos (o servidor já filtra; aqui é uma 2ª barreira).
@@ -316,15 +388,18 @@ function htmlVerificacao(v) {
       : "Não consegui ler os sites do Sebrae e da Receita Federal agora. A resposta se baseia nos documentos (PDFs) e pode estar desatualizada.";
     if (v.motivo) extra = `<p class="verif-motivo">${escapar(v.motivo)}</p>`;
   }
-  return `<div class="verificacao ${classe}"><p>${texto}</p>${extra}${links ? `<div class="fontes-web">${links}</div>` : ""}</div>`;
+  const icone = `<span class="verif-icone">${ICONES_VERIFICACAO[classe] || ICONES_VERIFICACAO.neutra}</span>`;
+  return `<div class="verificacao ${classe}"><div class="verif-linha">${icone}<p>${texto}</p></div>${extra}${links ? `<div class="fontes-web">${links}</div>` : ""}</div>`;
 }
 
 // Botões que levam ao site oficial para resolver o assunto (emitir DAS, declarar...).
+// Mesma regra do resto da página: só endereços https.
 function htmlAcoes(acoes) {
-  if (!acoes || !acoes.length) return "";
-  return '<div class="acoes-portal">' + acoes.map((a) =>
+  const validas = (acoes || []).filter((a) => a && /^https:\/\//i.test(String(a.url || "")));
+  if (!validas.length) return "";
+  return '<div class="acoes-portal">' + validas.map((a) =>
     `<a class="acao-portal" href="${escapar(a.url)}" target="_blank" rel="noopener" ` +
-    `title="Abre o site oficial do governo">${escapar(a.rotulo)}${ICONE_EXTERNO}</a>`
+    `title="Abre o site oficial">${ICONES_ACAO[a.icone] || ""}<span>${escapar(a.rotulo)}</span>${ICONE_EXTERNO}</a>`
   ).join("") + "</div>";
 }
 
@@ -339,9 +414,9 @@ function htmlContatoNaf() {
       `<img src="${NAF_QR}" alt="QR Code do formulário de agendamento do NAF" width="96" height="96" loading="lazy">` +
     '</a>' +
     '<div class="naf-texto">' +
-      '<strong>Para agendamento presencial ou online, entre em contato com o NAF - Núcleo de Apoio Fiscal</strong>' +
-      `<span>E-mail: <a href="mailto:${NAF_EMAIL}">${NAF_EMAIL}</a></span>` +
-      `<a href="${NAF_FORMULARIO}" target="_blank" rel="noopener">Formulário agendamento</a>` +
+      `<strong><span class="naf-icone">${ICONE_FONE}</span>Para agendamento presencial ou online, entre em contato com o NAF - Núcleo de Apoio Fiscal</strong>` +
+      `<span class="naf-linha">${ICONE_EMAIL}E-mail: <a href="mailto:${NAF_EMAIL}">${NAF_EMAIL}</a></span>` +
+      `<span class="naf-linha">${ICONE_CALENDARIO}<a href="${NAF_FORMULARIO}" target="_blank" rel="noopener">Formulário agendamento</a></span>` +
       '<small>Ou aponte a câmera do celular para o QR Code.</small>' +
     '</div></div>';
 }
@@ -375,11 +450,30 @@ function criarMensagem(tipo, extraClasse = "") {
 }
 
 function mostrarUsuario(texto) {
-  criarMensagem("user").balao.innerHTML = `<p>${escapar(texto)}</p>`;
+  const partes = criarMensagem("user");
+  partes.balao.innerHTML = `<p>${escapar(texto)}</p>`;
+  return partes.msg;
 }
 
-function mostrarErro(texto) {
-  criarMensagem("bot", "erro-msg").balao.innerHTML = `<p>${escapar(texto)}</p>`;
+// Erro com botão "Tentar novamente": refaz a mesma pergunta (sem precisar digitar de novo).
+function mostrarErro(texto, pergunta, msgUsuario) {
+  const partes = criarMensagem("bot", "erro-msg");
+  partes.balao.innerHTML = `<p>${escapar(texto)}</p>`;
+  if (!pergunta) return;
+  const repetir = document.createElement("button");
+  repetir.type = "button";
+  repetir.className = "botao-ferramenta botao-repetir";
+  repetir.innerHTML = `${ICONE_REPETIR}<span>Tentar novamente</span>`;
+  repetir.addEventListener("click", () => {
+    if (enviando || !pronto) return;
+    partes.msg.remove();
+    if (msgUsuario) msgUsuario.remove();
+    enviarPergunta(pergunta);
+  });
+  const ferramentas = document.createElement("div");
+  ferramentas.className = "msg-ferramentas";
+  ferramentas.appendChild(repetir);
+  partes.corpo.appendChild(ferramentas);
 }
 
 // Preenche uma mensagem do bot já concluída: texto, fontes, atalhos e botão copiar.
@@ -624,10 +718,14 @@ async function enviarPergunta(pergunta) {
   removerSugestoesContinuacao();
 
   const historico = mensagens.slice(-MAX_HISTORICO).map(({ papel, texto }) => ({ papel, texto }));
-  mostrarUsuario(pergunta);
+  const msgUsuario = mostrarUsuario(pergunta);
   campo.value = "";
   ajustarAltura();
   atualizarBotoes();
+  atualizarContador();
+  rolarParaBaixo();
+  // Leitores de tela: espera a resposta terminar para anunciar (não lê cada letra digitada).
+  areaMensagens.setAttribute("aria-busy", "true");
 
   // Pequena pausa antes do bot "começar a digitar", como numa conversa real.
   await esperar(PAUSA_ANTES_DO_BOT_MS);
@@ -688,9 +786,10 @@ async function enviarPergunta(pergunta) {
   } else {
     digitador.parar();
     partes.msg.remove();
-    mostrarErro(erro);
+    mostrarErro(erro, pergunta, msgUsuario);
   }
 
+  areaMensagens.removeAttribute("aria-busy");
   enviando = false;
   atualizarBotoes();
   rolarParaBaixo();
@@ -715,7 +814,33 @@ campo.addEventListener("keydown", (e) => {
   }
 });
 
-campo.addEventListener("input", () => { ajustarAltura(); atualizarBotoes(); });
+campo.addEventListener("input", () => { ajustarAltura(); atualizarBotoes(); atualizarContador(); });
+
+/* ---------- Contador de caracteres (aparece perto do limite) ---------- */
+const contador = document.getElementById("contador");
+const LIMITE_CARACTERES = Number(campo.getAttribute("maxlength")) || 1000;
+
+function atualizarContador() {
+  if (!contador) return;
+  const n = campo.value.length;
+  contador.hidden = n < LIMITE_CARACTERES * 0.8;
+  contador.textContent = `${n}/${LIMITE_CARACTERES}`;
+  contador.classList.toggle("no-limite", n >= LIMITE_CARACTERES);
+}
+
+/* ---------- Botão "ir para o fim" (quando a pessoa sobe para reler) ---------- */
+const botaoFim = document.getElementById("ir-fim");
+
+function atualizarBotaoFim() {
+  if (!botaoFim) return;
+  const distancia = areaMensagens.scrollHeight - areaMensagens.scrollTop - areaMensagens.clientHeight;
+  botaoFim.classList.toggle("visivel", distancia > 240);
+}
+
+if (botaoFim) {
+  areaMensagens.addEventListener("scroll", atualizarBotaoFim, { passive: true });
+  botaoFim.addEventListener("click", () => rolarParaBaixo());
+}
 
 /* ---------- Confirmação antes de começar uma nova conversa ---------- */
 const dialogoNova = document.getElementById("dialogo-nova");

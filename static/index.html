@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Aplica o tema escolhido antes de desenhar a página (evita piscar) -->
   <script>try{var t=localStorage.getItem("chatbot-mei-tema");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -47,8 +47,8 @@
           </span>
           <h1>FiscOn, o seu ChatBot sobre <em>MEI e Receita Federal</em>. Tire suas dúvidas em segundos</h1>
           <p class="lead">
-            Quer abrir seu CNPJ, entender o boleto mensal (DAS) ou saber se pode contratar um
-            funcionário? Pergunte do seu jeito: o FiscOn responde em linguagem simples e
+            Quer abrir seu CNPJ, entender o boleto mensal (DAS), saber se pode contratar um
+            funcionário ou se precisa declarar Imposto de Renda? Pergunte do seu jeito: o FiscOn responde em linguagem simples e
             mostra em qual documento oficial encontrou a informação.
           </p>
           <div class="acoes">
@@ -169,6 +169,21 @@
             <h3>Benefícios e encerramento</h3>
             <p>Aposentadoria e auxílios do INSS, dívidas e como dar baixa no MEI.</p>
           </article>
+          <article class="cartao">
+            <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 10h16M12 3l8 5H4z"/><path d="M6 10v8M10 10v8M14 10v8M18 10v8"/></svg></span>
+            <h3>Imposto de Renda</h3>
+            <p>Quem precisa declarar, dependentes, deduções, restituição e malha fina.</p>
+          </article>
+          <article class="cartao">
+            <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="11" r="2.5"/><path d="M4.5 16.5a4 4 0 017 0M14 10h5M14 14h3"/></svg></span>
+            <h3>CPF e CNPJ</h3>
+            <p>Situação cadastral, comprovantes e como regularizar pendências na Receita.</p>
+          </article>
+          <article class="cartao">
+            <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 21v-4h6v4M8 7h2M14 7h2M8 11h2M14 11h2"/></svg></span>
+            <h3>Simples Nacional</h3>
+            <p>Diferença entre MEI, ME e EPP, opção, exclusão e o que muda ao crescer.</p>
+          </article>
         </div>
       </div>
     </section>
@@ -191,8 +206,12 @@
             <p>A pergunta é reformulada e comparada com cartilhas e documentos oficiais sobre MEI e Receita Federal.</p>
           </div>
           <div class="passo">
+            <h3>Conferência oficial</h3>
+            <p>Os dados que mudam com o tempo (valores, limites, prazos) são conferidos nos sites do Sebrae e da Receita Federal.</p>
+          </div>
+          <div class="passo">
             <h3>Resposta com fontes</h3>
-            <p>A IA monta uma resposta clara e mostra em qual documento e página a informação está.</p>
+            <p>A IA monta uma resposta clara, mostra o documento e a página da informação e indica atalhos oficiais.</p>
           </div>
         </div>
 
@@ -200,10 +219,11 @@
           <h2 style="font-size:22px">Base de conhecimento</h2>
         </div>
         <ul class="documentos">
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Cartilha do MEI</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Perguntas e Respostas sobre o MEI (3 volumes)</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Impostos da Pessoa Física e do MEI</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Cartilha de Impostos</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Perguntas frequentes do Portal do Empreendedor (MEI)</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Perguntas e Respostas MEI e Simei (Comitê Gestor do Simples Nacional)</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Perguntas e Respostas do Imposto de Renda da Pessoa Física (Receita Federal)</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Perguntas e Respostas do Simples Nacional (Comitê Gestor)</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>Conferência ao vivo com os sites do Sebrae e da Receita Federal</li>
         </ul>
       </div>
     </section>
@@ -249,6 +269,6 @@
       checar();
     })();
   </script>
-  <script src="tema.js"></script>
+  <script src="tema.js?v=10"></script>
 </body>
 </html>

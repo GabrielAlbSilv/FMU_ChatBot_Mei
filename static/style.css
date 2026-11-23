@@ -212,7 +212,7 @@ a.marca-fmu:active { transform: scale(.97); }
 }
 .icone svg { width: 22px; height: 22px; }
 
-.passos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: passo; }
+.passos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; counter-reset: passo; }
 .passo { position: relative; padding: 24px; border-radius: var(--raio); background: var(--bg); border: 1px solid var(--borda); }
 .passo::before {
   counter-increment: passo; content: counter(passo);
@@ -246,7 +246,7 @@ a.marca-fmu:active { transform: scale(.97); }
   .hero .container, .explicacao { grid-template-columns: 1fr; gap: 36px; }
   .previa { transform: none; max-width: 520px; }
   .grade { grid-template-columns: repeat(2, 1fr); }
-  .passos { grid-template-columns: 1fr; }
+  .passos { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 600px) {
   .container { padding: 0 16px; }
@@ -255,7 +255,7 @@ a.marca-fmu:active { transform: scale(.97); }
   .marca span { font-size: 16px; }
   .cabecalho .marca-fmu img { height: 38px; }
   .secao { padding: 52px 0; }
-  .grade, .documentos { grid-template-columns: 1fr; }
+  .grade, .documentos, .passos { grid-template-columns: 1fr; }
   .hero .acoes .botao { width: 100%; }
   .cta-final { border-radius: 20px; padding: 40px 20px; }
   .cta-final .botao { width: 100%; }
@@ -313,12 +313,21 @@ body.pagina-chat {
 
 .sugestoes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 4px; }
 .sugestoes button {
+  display: flex; align-items: center; gap: 12px;
   text-align: left; background: var(--card); color: var(--texto);
   border: 1px solid var(--borda); border-radius: 14px; padding: 12px 14px;
-  font: 500 14px/1.4 var(--fonte); cursor: pointer; transition: border-color .15s, background .15s;
+  font: 500 14px/1.4 var(--fonte); cursor: pointer; transition: border-color .15s, background .15s, transform .15s;
 }
-.sugestoes button:hover { border-color: var(--vermelho); background: var(--vermelho-claro); }
-.sugestoes button span { display: block; color: var(--suave); font-size: 12px; font-weight: 400; margin-top: 2px; }
+.sugestoes button:hover { border-color: var(--vermelho); background: var(--vermelho-claro); transform: translateY(-1px); }
+.sug-icone {
+  display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0;
+  border-radius: 10px; background: var(--vermelho-claro); color: var(--vermelho);
+  transition: background .15s, color .15s;
+}
+.sugestoes button:hover .sug-icone { background: var(--vermelho); color: #fff; }
+.sug-icone svg { width: 18px; height: 18px; }
+.sug-texto { min-width: 0; }
+.sug-texto small { display: block; color: var(--suave); font-size: 12px; font-weight: 400; margin-top: 2px; }
 
 .msg { display: flex; gap: 10px; align-items: flex-start; animation: entrar .42s cubic-bezier(.2, .8, .2, 1) both; }
 .msg.user { transform-origin: bottom right; }
@@ -339,7 +348,9 @@ body.pagina-chat {
 .balao li { margin: 3px 0; }
 .balao strong { font-weight: 700; }
 .fontes { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--borda); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.fontes-titulo { font-size: 12px; color: var(--suave); width: 100%; }
+.fontes-titulo { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--suave); width: 100%; }
+.fontes-titulo svg { width: 13px; height: 13px; color: var(--vermelho); flex-shrink: 0; }
+.fonte-mais { font-weight: 600; }
 .fonte {
   display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
   padding: 3px 9px; border-radius: 999px; background: var(--card); border: 1px solid var(--borda); color: var(--suave);
@@ -357,11 +368,17 @@ a.fonte:hover { border-color: var(--vermelho); color: var(--vermelho); }
 }
 .acao-portal:hover { background: var(--vermelho-escuro); }
 .acao-portal svg { width: 15px; height: 15px; flex-shrink: 0; }
+.acao-portal svg:last-child { opacity: .8; width: 13px; height: 13px; }
 
 /* conferência com Sebrae e Receita Federal */
 .status-etapa { margin-left: 10px; font-size: 13px; color: var(--suave); vertical-align: middle; }
 .verificacao { margin-top: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--borda); background: var(--card); font-size: 13px; line-height: 1.4; }
 .verificacao p { margin: 0; }
+.verif-linha { display: flex; gap: 8px; align-items: flex-start; }
+.verif-icone { display: grid; place-items: center; flex-shrink: 0; margin-top: 1px; color: var(--suave); }
+.verif-icone svg { width: 16px; height: 16px; }
+.verificacao.ok .verif-icone { color: var(--ok); }
+.verificacao.atualizada .verif-icone { color: var(--vermelho); }
 .verificacao.ok { border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 .verificacao.ok p strong { color: var(--ok); }
 .verificacao.atualizada { border-color: var(--vermelho-borda); background: var(--vermelho-claro); }
@@ -384,6 +401,11 @@ a.fonte:hover { border-color: var(--vermelho); color: var(--vermelho); }
 .naf-texto small { font-size: 12px; }
 .naf-texto a { color: var(--vermelho); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
 .naf-texto a:hover { text-decoration: underline; }
+.naf-texto strong { display: flex; gap: 6px; align-items: flex-start; }
+.naf-icone { display: inline-grid; flex-shrink: 0; color: var(--vermelho); margin-top: 1px; }
+.naf-icone svg { width: 16px; height: 16px; }
+.naf-linha { display: inline-flex; align-items: center; gap: 6px; }
+.naf-linha svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--vermelho); }
 @media (max-width: 420px) { .contato-naf { flex-direction: column; align-items: flex-start; } }
 
 /* barra abaixo da resposta (copiar) */
@@ -396,6 +418,10 @@ a.fonte:hover { border-color: var(--vermelho); color: var(--vermelho); }
 .botao-ferramenta:hover { background: var(--bot); color: var(--texto); }
 .botao-ferramenta.copiado { color: var(--ok); }
 .botao-ferramenta svg { width: 15px; height: 15px; }
+.botao-repetir { color: var(--vermelho); border: 1px solid var(--vermelho-borda); }
+.botao-repetir:hover { background: var(--vermelho-claro); color: var(--vermelho); }
+/* links oficiais dentro da resposta */
+.msg.bot .balao p a, .msg.bot .balao li a { font-weight: 600; text-underline-offset: 2px; overflow-wrap: anywhere; }
 
 /* cursor piscando enquanto a resposta chega */
 .cursor {
@@ -427,9 +453,24 @@ a.fonte:hover { border-color: var(--vermelho); color: var(--vermelho); }
 @keyframes pulo { 0%, 80%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-4px); } }
 
 .entrada-area {
+  position: relative;
   padding: 12px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--borda); background: var(--card);
 }
+/* botão "ir para a última mensagem" */
+.ir-fim {
+  position: absolute; top: -54px; left: 50%; z-index: 2;
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  background: var(--card); color: var(--vermelho); border: 1px solid var(--borda); box-shadow: var(--sombra);
+  cursor: pointer; opacity: 0; pointer-events: none; transform: translate(-50%, 8px);
+  transition: opacity .2s ease, transform .2s ease, border-color .15s;
+}
+.ir-fim.visivel { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
+.ir-fim:hover { border-color: var(--vermelho); }
+.ir-fim svg { width: 20px; height: 20px; }
+.contador { display: block; margin: 6px 6px 0 0; text-align: right; font-size: 11.5px; color: var(--suave); font-variant-numeric: tabular-nums; }
+.contador[hidden] { display: none; }
+.contador.no-limite { color: var(--vermelho); font-weight: 600; }
 .entrada {
   display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 16px;
   background: var(--bg); border: 1px solid var(--borda); border-radius: 26px;

@@ -20,9 +20,10 @@ import re
 import time
 import unicodedata
 from collections import Counter, defaultdict
+from datetime import datetime
 from pathlib import Path
 
-VERSAO = "rag-leve-v9"
+VERSAO = "rag-leve-v10"
 ETAPA = "rag.py novo carregando"
 
 
@@ -48,7 +49,7 @@ PASTA_MODELO = PASTA_PROJETO / "modelo_cache"
 ARQ_VETORES = PASTA_INDICE / "vetores.npy"
 ARQ_TRECHOS = PASTA_INDICE / "trechos.json"
 ARQ_META = PASTA_INDICE / "meta.json"
-VERSAO_INDICE = "v4-hibrido"
+VERSAO_INDICE = "v5-hibrido"   # v5: ignora também o sumário "assunto ... 001" do IRPF
 
 # Modelo de embeddings. O padrão é leve (cabe no plano free do Render), mas foi
 # treinado em inglês. Para entender melhor perguntas em português, defina no .env:
@@ -87,6 +88,70 @@ def assinatura_pdfs():
         h.update(a.name.encode("utf-8"))
         h.update(hashlib.sha1(a.read_bytes()).digest())
     return h.hexdigest()
+
+
+# ------------------------------------------------------ nomes e edições dos documentos
+# Rótulo curto (chips de fonte na tela) e título completo (usado no prompt) de cada PDF.
+# Os títulos de fontes_pdfs.json têm prioridade; os daqui cobrem os PDFs que não estão lá.
+DOCUMENTOS_CONHECIDOS = {
+    "3-Perguntas&Respostas2_MEI.pdf": ("Perguntas frequentes MEI (gov.br)",
+                                       "Perguntas frequentes do Portal do Empreendedor (MEI)"),
+    "4-Perguntas&Respostas3_MEI.pdf": ("P&R MEI e Simei",
+                                       "Perguntas e Respostas MEI e Simei (Comitê Gestor do Simples Nacional)"),
+    "5-Impostos_PF_MEI.pdf": ("P&R Imposto de Renda PF",
+                              "Imposto de Renda Pessoa Física — Perguntas e Respostas (Receita Federal)"),
+    "7-Perguntas&Respostas_SimplesNacional.pdf": ("P&R Simples Nacional",
+                                                  "Perguntas e Respostas Simples Nacional (Comitê Gestor)"),
+}
+_info_docs = {}   # arquivo -> {"rotulo", "titulo", "ano"}
+
+
+def _nome_legivel(arquivo):
+    """'3-Perguntas&Respostas2_MEI.pdf' -> 'Perguntas & Respostas 2 MEI'."""
+    nome = re.sub(r"^\d+-|\.pdf$", "", arquivo, flags=re.IGNORECASE)
+    nome = nome.replace("&", " & ").replace("_", " ")
+    nome = re.sub(r"(?<=[A-Za-zÀ-ÿ])(?=\d)", " ", nome)
+    return re.sub(r"\s+", " ", nome).strip()
+
+
+def _ano_do_pdf(caminho):
+    """Ano da edição (metadados + 3 primeiras páginas). Mesmo critério do atualizar_base.py."""
+    try:
+        from pypdf import PdfReader
+
+        leitor = PdfReader(str(caminho))
+        textos = [str((leitor.metadata or {}).get(c) or "") for c in ("/ModDate", "/CreationDate")]
+        textos += [leitor.pages[i].extract_text() or "" for i in range(min(3, len(leitor.pages)))]
+        anos = [int(a) for t in textos for a in re.findall(r"(?<!\d)(20[0-3]\d)(?!\d)", t)]
+        return max(anos) if anos else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def carregar_info_documentos():
+    """Lê títulos (fontes_pdfs.json + DOCUMENTOS_CONHECIDOS) e o ano de cada PDF da base."""
+    titulos = {}
+    try:
+        manifesto = json.loads((PASTA_PROJETO / "fontes_pdfs.json").read_text(encoding="utf-8"))
+        titulos = {f["arquivo"]: f["titulo"] for f in manifesto.get("fontes", [])
+                   if isinstance(f, dict) and f.get("arquivo") and f.get("titulo")}
+    except (OSError, ValueError):
+        pass
+    _info_docs.clear()
+    for caminho in listar_pdfs():
+        rotulo, titulo = DOCUMENTOS_CONHECIDOS.get(caminho.name, (None, None))
+        legivel = _nome_legivel(caminho.name)
+        _info_docs[caminho.name] = {
+            "rotulo": rotulo or legivel,
+            # o ano vai à parte (campo "ano"): tira "(edição 2026)" do título para não repetir
+            "titulo": re.sub(r"\s*\(edi[cç][aã]o \d{4}\)", "", titulos.get(caminho.name) or titulo or legivel),
+            "ano": _ano_do_pdf(caminho),
+        }
+    return _info_docs
+
+
+def info_documento(arquivo):
+    return _info_docs.get(arquivo) or {"rotulo": _nome_legivel(arquivo), "titulo": _nome_legivel(arquivo), "ano": None}
 
 
 def criar_embeddings():
@@ -147,7 +212,9 @@ def extrair_trechos():
         for num, pagina in enumerate(leitor.pages, start=1):
             bruto = pagina.extract_text() or ""
             if bruto and (1000 * bruto.count("?") / len(bruto) > LIMITE_INDICE
-                          or len(re.findall(r"\.{5,}", bruto)) >= 4):
+                          or len(re.findall(r"\.{5,}", bruto)) >= 4
+                          # sumário no formato "Assunto da pergunta 001" (P&R do IRPF)
+                          or len(re.findall(r"(?m)(?:^|\s)\d{3}\s*$", bruto)) >= 10):
                 ignoradas += 1            # página de índice/sumário (sem conteúdo)
                 continue
             limpo = _limpar(bruto)
@@ -232,6 +299,22 @@ _SINONIMOS = {   # termo da pergunta -> termos que aparecem nos documentos
     "socio": "socio titular", "empresa": "cnpj", "salario": "remuneracao",
     "desenquadrar": "desenquadramento", "estourar": "excesso limite",
     "ultrapassar": "excesso limite", "passar": "excesso limite",
+    # Receita Federal / Imposto de Renda da pessoa física
+    "ir": "imposto renda irpf", "irpf": "imposto renda declaracao",
+    "leao": "imposto renda carne", "devolucao": "restituicao", "devolver": "restituicao",
+    "lote": "restituicao", "malha": "malha fina pendencia",
+    "retificar": "retificadora declaracao", "corrigir": "retificadora",
+    "dependente": "dependentes deducao", "dependentes": "deducao",
+    "filho": "dependente", "filhos": "dependente",
+    "deduzir": "deducao dedutivel", "abater": "deducao dedutivel",
+    "isento": "isencao rendimentos isentos", "isenta": "isencao rendimentos isentos",
+    "pendente": "pendencia regularizacao", "suspenso": "regularizacao situacao cadastral",
+    "irregular": "regularizacao situacao cadastral",
+    "aluguel": "alugueis rendimentos", "alugueis": "rendimentos",
+    "pensao": "pensao alimenticia", "aposentado": "aposentadoria rendimentos",
+    "ganho": "ganho capital", "acoes": "renda variavel", "bolsa": "renda variavel",
+    "simples": "simples nacional", "microempresa": "me epp simples",
+    "excluido": "exclusao", "exclusao": "excluido termo",
 }
 
 
@@ -244,9 +327,24 @@ def tokenizar(texto, consulta=False):
     texto = re.sub(r"\bDAS\b", " dasmei ", texto)          # DAS (imposto) != "das" (preposição)
     brutos = [t for t in re.findall(r"[a-z0-9]+", _sem_acento(texto)) if t not in _STOP]
     if consulta:
+        # Pergunta sobre Imposto de Renda da PESSOA FÍSICA (e não sobre o MEI): os sinônimos do
+        # MEI (DAS, DASN-SIMEI) puxariam a busca para o lugar errado.
+        sobre_ir = ("mei" not in brutos and "simei" not in brutos and "dasmei" not in brutos
+                    and bool({"irpf", "dirpf", "ir", "restituicao", "leao"} & set(brutos)
+                             or ("imposto" in brutos and "renda" in brutos)))
+        tabela = {**_SINONIMOS, **_SINONIMOS_IR} if sobre_ir else _SINONIMOS
         for t in list(brutos):
-            brutos += _SINONIMOS.get(t, "").split()
+            brutos += tabela.get(t, "").split()
     return [(t[:-1] if len(t) > 3 and t.endswith("s") else t)[:7] for t in brutos]
+
+
+_SINONIMOS_IR = {   # substituem os de _SINONIMOS quando a pergunta é sobre IR da pessoa física
+    "imposto": "tributo", "impostos": "tributo",
+    "declarar": "declaracao ajuste anual obrigada", "declaracao": "ajuste anual",
+    "precisa": "obrigada", "obrigado": "obrigada", "obrigada": "obrigada",
+    "pagar": "pagamento quota", "paga": "pagamento", "quanto": "valor",
+    "atrasado": "atraso multa", "atrasada": "atraso multa", "atrasei": "atraso multa",
+}
 
 
 class Bm25:
@@ -304,9 +402,62 @@ class Indice:
         exatamente as mesmas palavras dos PDFs.
         """
         consultas = [c for c in dict.fromkeys(c.strip() for c in consultas if c) if c]
+        if not consultas:
+            return []
         placar = sum(self._placar(c) for c in consultas)
-        melhores = np.argsort(-placar)[:k]
-        return [self.trechos[i] for i in melhores]
+        ordem = np.argsort(-placar)
+        return juntar_vizinhos(self.trechos, ordem, k)
+
+
+def _colar(a, b):
+    """Junta dois trechos vizinhos removendo a sobreposição (SOBREPOSICAO) entre eles."""
+    amostra = b[:60]
+    pos = a.rfind(amostra) if amostra else -1
+    if pos >= 0 and b.startswith(a[pos:]):
+        return a[:pos] + b
+    return f"{a} {b}"
+
+
+def juntar_vizinhos(trechos, ordem, k=K, max_por_grupo=3):
+    """Escolhe os melhores trechos e funde os que são vizinhos no mesmo PDF.
+
+    Os trechos se sobrepõem (SOBREPOSICAO) e, em documentos de perguntas e respostas, a
+    resposta costuma continuar no trecho seguinte. Sem fundir, dois vizinhos ocupariam duas
+    vagas repetindo texto; fundidos, ocupam uma vaga e liberam espaço para outro assunto.
+    Devolve até `k` grupos, na ordem de relevância, cada um com fonte, página(s) e texto.
+    """
+    escolhidos, grupos = [], []
+    for i in (int(x) for x in ordem[:k * 3]):
+        escolhidos.append(i)
+        grupos = _agrupar(trechos, escolhidos, max_por_grupo)
+        if len(grupos) >= k:
+            break
+    saida = []
+    for membros in grupos[:k]:
+        texto = trechos[membros[0]]["texto"]
+        for m in membros[1:]:
+            texto = _colar(texto, trechos[m]["texto"])
+        paginas = sorted({int(trechos[m]["pagina"]) for m in membros})
+        saida.append({"fonte": trechos[membros[0]]["fonte"], "pagina": paginas[0],
+                      "paginas": paginas, "texto": texto})
+    return saida
+
+
+def _agrupar(trechos, escolhidos, max_por_grupo):
+    """Agrupa índices consecutivos do mesmo PDF; ordena os grupos pelo melhor colocado."""
+    rank = {i: r for r, i in enumerate(escolhidos)}
+    grupos, atual = [], []
+    for i in sorted(escolhidos):
+        if (atual and i == atual[-1] + 1 and len(atual) < max_por_grupo
+                and trechos[i]["fonte"] == trechos[atual[-1]]["fonte"]):
+            atual.append(i)
+        else:
+            if atual:
+                grupos.append(atual)
+            atual = [i]
+    if atual:
+        grupos.append(atual)
+    return sorted(grupos, key=lambda g: min(rank[i] for i in g))
 
 
 def iniciar_rag():
@@ -333,6 +484,10 @@ def iniciar_rag():
     trechos = json.loads(ARQ_TRECHOS.read_text(encoding="utf-8"))
     indice = Indice(embeddings, vetores, trechos)
 
+    _etapa("carregando indice: identificando edicao de cada documento")
+    for nome, info in carregar_info_documentos().items():
+        print(f"[RAG] {nome}: {info['titulo']} (edição {info['ano'] or '?'})", flush=True)
+
     _etapa("criando cliente Groq")
     cliente = Groq(api_key=os.environ["GROQ_API_KEY"])
     _etapa("pronto")
@@ -356,6 +511,9 @@ SOBRE_O_BOT = """\
   básicos.
 - Atualização: antes de responder, confere a resposta feita com os PDFs nos sites do Sebrae e da
   Receita Federal (únicas fontes de comparação) e, se algo estiver desatualizado, corrige.
+- Atendimento humano: para casos pessoais ou mais complexos, a pessoa pode agendar atendimento
+  presencial ou online com o NAF (Núcleo de Apoio Fiscal) da FMU pelo e-mail naf@fmu.br ou pelo
+  formulário que aparece abaixo de cada resposta.
 - Limites: é uma IA; pode errar e não substitui um contador ou os canais oficiais
   (Portal do Empreendedor — gov.br/mei, site da Receita Federal — gov.br/receitafederal, Sebrae)."""
 
@@ -393,11 +551,20 @@ para pequenos empreendedores e pessoas físicas brasileiras. Responda sempre em 
    e Receita Federal e sugira o tipo de pergunta que pode responder.
 6. **Pergunta vaga ou ambígua**: responda a interpretação mais provável e, se fizer
    diferença, pergunte ao final o que a pessoa quis dizer.
+7. **Situação pessoal complicada** (dívidas acumuladas, malha fina, exclusão do Simples,
+   desenquadramento, CPF ou CNPJ irregular): oriente o caminho geral e sugira também o
+   atendimento do NAF da FMU ou de um contador para analisar o caso.
 
 Nunca contradiga os documentos com conhecimento externo. Se as fontes não cobrem a
 dúvida por completo, responda o que for possível e diga claramente o que faltou.
+Cada trecho informa o documento e o ano da edição. Se dois trechos divergirem, prefira o
+documento mais recente e avise que a regra pode ter mudado. Use a data de hoje (informada
+junto da pergunta) para entender "este ano", "ano passado" e prazos, e diga o ano a que um
+valor ou prazo se refere quando o documento informar.
 Use o histórico da conversa para entender perguntas de continuação
 ("e se eu atrasar?", "e quanto custa?", "pode explicar melhor?").
+Nunca peça senha da conta gov.br nem dados pessoais completos (CPF, CNPJ, renda); se a
+pessoa enviar, não repita esses dados na resposta.
 
 ## Citações
 Os trechos vêm numerados como [1], [2], ... Ao usar uma informação de um trecho,
@@ -406,9 +573,14 @@ empregado [3]." Não cite trechos que você não usou. Não invente números de 
 Informações de conhecimento geral ficam sem citação.
 
 ## Formato
-- Vá direto ao ponto: comece pela resposta e depois dê os detalhes.
+- Vá direto ao ponto: a primeira frase já responde a pergunta (ex.: "Sim, o MEI pode ter
+  um empregado."); depois vêm os detalhes.
 - Linguagem simples, sem juridiquês; explique siglas na primeira vez (ex.: DAS —
   Documento de Arrecadação do Simples Nacional).
+- Quando a pessoa precisar FAZER algo (emitir, declarar, abrir, regularizar, parcelar),
+  termine com o próximo passo prático: onde fazer (Portal do Empreendedor, app MEI, e-CAC,
+  site da Receita) e o que ter em mãos. Para sites, use o endereço curto oficial
+  (ex.: gov.br/mei); a tela já mostra botões com os links dos serviços mais comuns.
 - Use parágrafos curtos, **negrito** para o essencial e listas com "-" ou "1." quando
   houver passos ou requisitos. NÃO use tabelas nem títulos com "#".
 - Respostas de tamanho proporcional à pergunta: saudações em 1–2 frases; dúvidas
@@ -474,7 +646,8 @@ def reescrever_consulta(cliente, pergunta, historico):
         r = cliente.chat.completions.create(
             model=MODELO_REESCRITA,
             temperature=0,
-            max_completion_tokens=400,
+            # folga para o raciocínio interno dos modelos gpt-oss (conta como saída)
+            max_completion_tokens=700,
             messages=[{"role": "system", "content": PROMPT_REESCRITA},
                       {"role": "user", "content": entrada}],
             **_opcoes_modelo(MODELO_REESCRITA, "low"),
@@ -512,55 +685,95 @@ def _extrair_citacoes(resposta, total):
 
 
 def _formatar_fontes(trechos):
-    """[{"arquivo": "1-Cartilha_MEI.pdf", "paginas": [7, 9]}, ...]"""
+    """[{"arquivo": "4-....pdf", "paginas": [7, 9], "rotulo": "P&R MEI e Simei", "titulo": "..."}, ...]"""
     paginas = defaultdict(set)
     for t in trechos:
-        paginas[t["fonte"]].add(int(t["pagina"]))
-    return [{"arquivo": fonte, "paginas": sorted(pags)} for fonte, pags in sorted(paginas.items())]
+        paginas[t["fonte"]].update(int(p) for p in (t.get("paginas") or [t["pagina"]]))
+    saida = []
+    for fonte, pags in sorted(paginas.items()):
+        info = info_documento(fonte)
+        saida.append({"arquivo": fonte, "paginas": sorted(pags), "rotulo": info["rotulo"],
+                      "titulo": info["titulo"] + (f" (edição {info['ano']})" if info["ano"] else "")})
+    return saida
 
 
 # ----------------------------------------------------- atalhos para o Portal oficial
-# (regex aplicada à pergunta + resposta sem acentos, rótulo do botão, link oficial)
+# (regex aplicada ao texto sem acentos, rótulo do botão, link oficial, ícone, só na pergunta?)
+# "só na pergunta" = o atalho só aparece se a PESSOA falou do assunto (evita botões de IR em
+# respostas sobre DAS que apenas mencionam o Imposto de Renda, por exemplo).
+# O ícone é um nome que o script.js transforma em desenho (ver ICONES_ACAO).
 ACOES_PORTAL = [
     (r"\b(emit|gera|pag|imprim)\w*\b.{0,40}\b(das|boleto|guia)\b|\bpgmei\b",
      "Emitir o DAS (boleto mensal)",
-     "https://www8.receita.fazenda.gov.br/SimplesNacional/Aplicacoes/ATSPO/pgmei.app/Identificacao"),
+     "https://www8.receita.fazenda.gov.br/SimplesNacional/Aplicacoes/ATSPO/pgmei.app/Identificacao",
+     "boleto", False),
     (r"\bdasn\b|declaracao anual",
      "Fazer a declaração anual (DASN-SIMEI)",
-     "https://www8.receita.fazenda.gov.br/SimplesNacional/Aplicacoes/ATSPO/dasnsimei.app/Identificacao"),
+     "https://www8.receita.fazenda.gov.br/SimplesNacional/Aplicacoes/ATSPO/dasnsimei.app/Identificacao",
+     "declaracao", False),
     (r"\b(abrir|formaliz\w*|virar|ser|tornar)\b.{0,25}\bmei\b|quero ser mei|inscricao como mei",
      "Abrir meu MEI",
-     "https://www.gov.br/empresas-e-negocios/pt-br/empreendedor/quero-ser-mei"),
+     "https://www.gov.br/empresas-e-negocios/pt-br/empreendedor/quero-ser-mei",
+     "abrir", False),
     (r"\bbaixa\b|\bencerr\w*|\bfechar\b.{0,25}\b(mei|empresa|cnpj)\b",
      "Serviços do MEI (inclui dar baixa)",
-     "https://www.gov.br/empresas-e-negocios/pt-br/empreendedor/servicos-para-mei"),
+     "https://www.gov.br/empresas-e-negocios/pt-br/empreendedor/servicos-para-mei",
+     "servicos", False),
     (r"nota fiscal de servico|nfs-?e|\bemit\w*\b.{0,20}\bnota",
      "Emissor de nota fiscal de serviço",
-     "https://www.nfse.gov.br/EmissorNacional"),
+     "https://www.nfse.gov.br/EmissorNacional",
+     "nota", False),
+    (r"\bparcel\w*|\bdividas?\b|\bdebitos?\b",
+     "Serviços do MEI no Simples Nacional (parcelamento)",
+     "https://www8.receita.fazenda.gov.br/SimplesNacional/Servicos/Grupo.aspx?grp=8",
+     "parcelar", True),
+    (r"imposto de renda|\b(irpf|dirpf)\b|\bir\b.{0,20}\b(declar|restitu|pagar|devo)|restituicao|malha fina",
+     "Meu Imposto de Renda (Receita Federal)",
+     "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda",
+     "leao", True),
+    (r"\bcpf\b.{0,40}\b(situacao|regular\w*|pendente|pendencia|suspens\w*|cancelad\w*|consult\w*|comprovante)"
+     r"|\b(situacao|regulariz\w*|consult\w*|comprovante)\b.{0,30}\bcpf\b",
+     "Consultar a situação do CPF",
+     "https://servicos.receita.fazenda.gov.br/servicos/cpf/consultasituacao/consultapublica.asp",
+     "cpf", True),
+    (r"\b(cartao|comprovante|consult\w*|situacao)\b.{0,30}\bcnpj\b|\bcnpj\b.{0,30}\b(cartao|comprovante|situacao)\b",
+     "Emitir o comprovante do CNPJ",
+     "https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/cnpjreva_Solicitacao.asp",
+     "cnpj", True),
 ]
 MAX_ACOES = 2
 
 
 def detectar_acoes(pergunta, resposta):
-    texto = _sem_acento(f"{pergunta} {resposta}")
+    so_pergunta = _sem_acento(pergunta)
+    tudo = _sem_acento(f"{pergunta} {resposta}")
     acoes = []
-    for padrao, rotulo, url in ACOES_PORTAL:
-        if re.search(padrao, texto):
-            acoes.append({"rotulo": rotulo, "url": url})
+    for padrao, rotulo, url, icone, apenas_pergunta in ACOES_PORTAL:
+        if re.search(padrao, so_pergunta if apenas_pergunta else tudo):
+            acoes.append({"rotulo": rotulo, "url": url, "icone": icone})
         if len(acoes) >= MAX_ACOES:
             break
     return acoes
+
+
+# "@@SUGESTOES:" (formato pedido) e também "SUGESTÕES:" / "Sugestões de perguntas:" no fim,
+# caso o modelo esqueça o "@@".
+_LINHA_SUGESTOES = re.compile(r"(?:^|\n)[ \t>*_]*(?:@@\s*)?sugest(?:oes|ões)[^:\n]{0,30}:", re.IGNORECASE)
 
 
 def _separar_sugestoes(texto):
     """Tira a linha '@@SUGESTOES: a | b | c' do fim da resposta."""
     pos = texto.find("@@")
     if pos < 0:
-        return texto.strip(), []
+        achados = list(_LINHA_SUGESTOES.finditer(texto))
+        # só aceita sem "@@" se estiver no finalzinho (evita cortar um parágrafo legítimo)
+        if not achados or len(texto) - achados[-1].start() > 400:
+            return texto.strip(), []
+        pos = achados[-1].start()
     cauda = texto[pos:].split(":", 1)[-1]
     sugestoes = []
     for s in re.split(r"\s*\|\s*|\n", cauda):
-        s = s.strip(" -*\"'")
+        s = re.sub(r"^(?:[-*•]|\d+[.)])\s*", "", s.strip(" *\"'")).strip(" *\"'")
         if 5 <= len(s) <= 120 and s not in sugestoes:
             sugestoes.append(s)
     return texto[:pos].strip(), sugestoes[:3]
@@ -593,15 +806,56 @@ def _cache_gravar(chave, resultado):
 
 
 # -------------------------------------------------------------------- geração
+def _cabecalho_trecho(t):
+    info = info_documento(t["fonte"])
+    pags = t.get("paginas") or [t["pagina"]]
+    if len(pags) == 1:
+        paginas = f"p. {pags[0]}"
+    elif pags[-1] - pags[0] == len(pags) - 1:          # páginas seguidas: "p. 7–8"
+        paginas = f"p. {pags[0]}–{pags[-1]}"
+    else:                                              # com salto (ex.: sumário ignorado no meio)
+        paginas = "p. " + ", ".join(map(str, pags))
+    edicao = f", edição {info['ano']}" if info["ano"] else ""
+    return f"(Fonte: {info['titulo']}{edicao}, {paginas})"
+
+
+def _hoje():
+    return datetime.now(verificador.FUSO_BR).strftime("%d/%m/%Y")
+
+
 def montar_mensagens(trechos, pergunta, historico):
-    contexto = "\n\n".join(
-        f"[{i}] (Fonte: {t['fonte']}, p. {t['pagina']})\n{t['texto']}"
-        for i, t in enumerate(trechos, start=1)
-    )
-    usuario = (f"Trechos recuperados dos documentos sobre MEI e Receita Federal:\n{contexto}\n\n"
-               f"---\nPergunta do usuário: {pergunta}")
+    if trechos:
+        contexto = "\n\n".join(f"[{i}] {_cabecalho_trecho(t)}\n{t['texto']}"
+                               for i, t in enumerate(trechos, start=1))
+        bloco = f"Trechos recuperados dos documentos sobre MEI e Receita Federal:\n{contexto}"
+    else:
+        bloco = ("(Nenhum trecho de documento foi buscado: a mensagem parece ser uma saudação, "
+                 "agradecimento ou pergunta sobre você. Responda com base na seção \"Sobre você\".)")
+    usuario = f"{bloco}\n\n---\nData de hoje: {_hoje()}\nPergunta do usuário: {pergunta}"
     return ([{"role": "system", "content": SISTEMA}] + historico +
             [{"role": "user", "content": usuario}])
+
+
+# ------------------------------------------------- conversa simples (sem busca nos PDFs)
+# "oi", "obrigado", "quem é você?"... não precisam de busca nem de conferência nos sites:
+# pulamos a reescrita da consulta (1 chamada a menos na Groq) e a resposta sai mais rápido.
+_PALAVRAS_CONVERSA = set("""
+oi oii oiii ola opa eai e ai hey hi hello alo bom boa dia tarde noite tudo bem bom beleza blz
+obrigado obrigada obg brigado brigada valeu vlw grato grata agradeco muito pela pelo ajuda ajudou
+ok okay certo entendi show perfeito otimo legal massa top tchau ate mais logo flw abraco
+quem voce vc e o que a um uma faz sabe fazer pode me ajudar qual sua seu funcao nome como funciona
+se chama fiscon bot chatbot robo ia assistente virtual ser humano pessoa real
+""".split())
+_ANCORAS_CONVERSA = set("""
+oi oii oiii ola opa eai hey hi hello alo dia tarde noite obrigado obrigada obg brigado brigada valeu
+vlw grato grata agradeco ok okay entendi tchau flw voce vc fiscon bot chatbot robo assistente nome
+""".split())
+
+
+def eh_conversa_simples(pergunta):
+    palavras = re.findall(r"[a-z]+", _sem_acento(pergunta))
+    return (0 < len(palavras) <= 10 and all(p in _PALAVRAS_CONVERSA for p in palavras)
+            and any(p in _ANCORAS_CONVERSA for p in palavras))
 
 
 def responder_stream(indice, cliente, pergunta, historico=None):
@@ -622,20 +876,24 @@ def responder_stream(indice, cliente, pergunta, historico=None):
             yield "fim", dict(pronto, cache=True)
             return
 
+    conversa = eh_conversa_simples(pergunta)
     consultas = [pergunta]
-    reescrita = reescrever_consulta(cliente, pergunta, historico) if REESCREVER_CONSULTA else None
-    if reescrita:
-        consultas.append(reescrita)
-    elif historico:
-        # Sem reescrita: junta a última pergunta do usuário para dar contexto à busca.
-        anteriores = [m["content"] for m in historico if m["role"] == "user"]
-        if anteriores:
-            consultas.append(f"{anteriores[-1]} {pergunta}")
-    print(f"[RAG] consultas: {consultas}", flush=True)
+    if conversa:
+        trechos = []
+        print(f"[RAG] conversa simples (sem busca): {pergunta!r}", flush=True)
+    else:
+        reescrita = reescrever_consulta(cliente, pergunta, historico) if REESCREVER_CONSULTA else None
+        if reescrita:
+            consultas.append(reescrita)
+        elif historico:
+            # Sem reescrita: junta a última pergunta do usuário para dar contexto à busca.
+            anteriores = [m["content"] for m in historico if m["role"] == "user"]
+            if anteriores:
+                consultas.append(f"{anteriores[-1]} {pergunta}")
+        print(f"[RAG] consultas: {consultas}", flush=True)
+        trechos = indice.buscar_varias(consultas)
 
-    trechos = indice.buscar_varias(consultas)
-
-    if verificador.ATIVO:
+    if verificador.ATIVO and not conversa:
         yield from _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico, chave)
         return
 

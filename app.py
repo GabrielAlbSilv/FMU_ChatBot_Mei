@@ -70,7 +70,6 @@ def _info_arquivo_rag():
 def _pdfs_indexados():
     """Lista de PDFs que entraram no índice (lida do meta.json gerado no build)."""
     try:
-        import json
         return json.loads((_AQUI / "indice" / "meta.json").read_text(encoding="utf-8")).get("arquivos")
     except Exception:  # noqa: BLE001
         return None
@@ -79,7 +78,6 @@ def _pdfs_indexados():
 def _base_atualizada_em():
     """Data (ISO) da última vez que o atualizar_base.py trocou algum PDF; None se nunca rodou."""
     try:
-        import json
         return json.loads((_AQUI / "base_status.json").read_text(encoding="utf-8")).get("atualizado_em")
     except Exception:  # noqa: BLE001
         return None
@@ -146,15 +144,34 @@ def _antes_de_cada_requisicao():
     garantir_inicializacao()
 
 
+_ultima_limpeza = [0.0]
+_trava_acessos = threading.Lock()
+
+
 def _excedeu_limite(ip):
     agora = time.time()
-    fila = _acessos[ip]
-    while fila and agora - fila[0] > JANELA_SEGUNDOS:
-        fila.popleft()
-    if len(fila) >= LIMITE_REQUISICOES:
-        return True
-    fila.append(agora)
-    return False
+    with _trava_acessos:
+        # De tempos em tempos esquece os IPs que não perguntam nada há mais de uma janela
+        # (sem isso o dicionário cresceria para sempre enquanto o servidor estiver no ar).
+        if agora - _ultima_limpeza[0] > 10 * JANELA_SEGUNDOS:
+            for chave in [k for k, f in _acessos.items() if not f or agora - f[-1] > JANELA_SEGUNDOS]:
+                del _acessos[chave]
+            _ultima_limpeza[0] = agora
+        fila = _acessos[ip]
+        while fila and agora - fila[0] > JANELA_SEGUNDOS:
+            fila.popleft()
+        if len(fila) >= LIMITE_REQUISICOES:
+            return True
+        fila.append(agora)
+        return False
+
+
+@app.after_request
+def _cabecalhos_de_seguranca(resposta):
+    """Cabeçalhos básicos de proteção (não mudam nada no funcionamento das páginas)."""
+    resposta.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resposta.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return resposta
 
 
 @app.get("/")
