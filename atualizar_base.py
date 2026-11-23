@@ -46,7 +46,7 @@ MIN_BYTES = 10_000            # menor que isso não é uma publicação de verda
 TIMEOUT_DOWNLOAD = 90         # segundos
 FRACAO_MINIMA_PAGINAS = 0.5   # PDF novo com menos da metade das páginas do atual é suspeito
 ANO_MINIMO_PADRAO = 2026
-PASTA_ARQUIVADOS = RAIZ / "pdfs_arquivados"      # PDFs antigos guardados fora do índice (não são apagados)
+PASTA_ARQUIVADOS = RAIZ / "pdfs_arquivados"      # PDFs antigos guardados fora do índice
 NOME_VALIDO = re.compile(r"^\d+-[\w&.-]+\.pdf$", re.IGNORECASE)   # mesmo padrão do rag.py/app.py
 
 

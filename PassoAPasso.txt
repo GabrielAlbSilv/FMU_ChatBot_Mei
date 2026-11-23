@@ -1,4 +1,4 @@
-1. Crie a pasta do projeto e coloque nela os arquivos (incluindo os PDFs numerados, ex.: 1-Cartilha_MEI.pdf)
+1. Crie a pasta do projeto e coloque nela os arquivos (incluindo os PDFs numerados, ex.: 3-Perguntas&Respostas2_MEI.pdf)
 
 2. Abra a pasta do projeto no VS Code
 		2.1 Instale o Python, comando:
@@ -29,7 +29,7 @@
 	  (SOMENTE esses dois; veja DOMINIOS_PERMITIDOS em verificador.py). Se um dado dos PDFs estiver
 	  desatualizado, ele gera uma nova resposta com base nos sites e avisa o usuário.
 	- Páginas oficiais já conhecidas ficam em fontes_oficiais.json (edite para incluir outras).
-	- Para desligar: VERIFICAR_SITES=0 no .env.  Testes offline: python teste_verificador.py
+	- Para desligar: VERIFICAR_SITES=0 no .env.  Testes offline: python testes.py
 
 10. Manter a base atualizada (PDFs):
 	- fontes_pdfs.json lista cada PDF da base e a URL oficial (Sebrae/Receita) de onde baixar a versão atual.
@@ -40,8 +40,15 @@
 	  PDF mudou. Ao aprovar, o Render faz o deploy e refaz o índice. (Ative em Settings > Actions >
 	  General: "Read and write permissions" e "Allow GitHub Actions to create and approve pull requests".)
 	- O índice local também se refaz sozinho se algum PDF mudar (assinatura dos arquivos).
-	- Testes offline: python teste_verificador.py  e  python teste_atualizar_base.py
+	- Testes offline: python testes.py
 	- Só entram PDFs de 2026 em diante (ano_minimo em fontes_pdfs.json). python atualizar_base.py --auditar mostra
 	  o ano de cada PDF; --arquivar-antigos move os anteriores a 2026 para pdfs_arquivados/ (não são apagados).
 	- IMPORTANTE: rode  python atualizar_base.py  (ou o workflow) ANTES de publicar: sem isso a base fica só com
 	  os PDFs de 2026 que já estão na pasta.
+
+11. Baixar os PDFs agora (na sua máquina, com internet livre):
+	pip install pypdf
+	python atualizar_base.py
+	-> baixa os 3 PDFs gerais (MEI e Simei, IRPF 2026, Simples Nacional) para esta pasta, com os nomes
+	   4-Perguntas&Respostas3_MEI.pdf, 5-Impostos_PF_MEI.pdf e 7-Perguntas&Respostas_SimplesNacional.pdf.
+	-> o relatorio_atualizacao.md mostra o que foi baixado. Depois faça commit/deploy (o Render reindexa).

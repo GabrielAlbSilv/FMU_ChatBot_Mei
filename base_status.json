@@ -1,3 +1,15 @@
 {
-  "arquivos": {}
+  "arquivos": {
+    "5-Impostos_PF_MEI.pdf": {
+      "titulo": "Imposto de Renda Pessoa Física — Perguntas e Respostas (edição 2026)",
+      "url": "https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/perguntas-e-respostas/dirpf/p-r-irpf-2026-v1-00-2026-04-23.pdf",
+      "sha256": "f3740385c07fa4dc52f8614d009dd5bd038fbeb8bd935f89da4e9bc26ed2a3b0",
+      "paginas": 340,
+      "bytes": 4751936,
+      "baixado_em": "2026-11-23T09:10:15-03:00",
+      "etag": "",
+      "last_modified": ""
+    }
+  },
+  "atualizado_em": "2026-11-23T09:10:15-03:00"
 }
