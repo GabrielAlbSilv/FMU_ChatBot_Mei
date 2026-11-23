@@ -154,9 +154,16 @@ async function verificarStatus() {
     if (d.pronto) {
       pronto = true;
       const baseData = document.getElementById("base-data");
-      if (baseData && d.base_atualizada_em) {
-        const dt = new Date(d.base_atualizada_em);
-        if (!isNaN(dt)) baseData.textContent = "Base de documentos atualizada em " + dt.toLocaleDateString("pt-BR") + ".";
+      if (baseData) {
+        const partesData = [];
+        const dt = new Date(d.base_atualizada_em || "");
+        if (!isNaN(dt)) partesData.push("Base de documentos atualizada em " + dt.toLocaleDateString("pt-BR") + ".");
+        const web = d.base_web && d.base_web.atualizada_em ? new Date(d.base_web.atualizada_em) : null;
+        if (web && !isNaN(web)) {
+          partesData.push("Sites oficiais consultados em " + web.toLocaleDateString("pt-BR") + " às " +
+            web.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + ".");
+        }
+        baseData.textContent = partesData.join(" ");
       }
       definirStatus("Online", "pronto");
       atualizarBotoes();
@@ -318,10 +325,10 @@ const ICONES_VERIFICACAO = {
 };
 
 // Chips das fontes: cada página abre o PDF exatamente nela.
-function htmlFontes(fontes) {
-  if (!fontes || !fontes.length) return "";
+function htmlFontes(fontes, paginasOficiais) {
+  if ((!fontes || !fontes.length) && (!paginasOficiais || !paginasOficiais.length)) return "";
   const chips = [];
-  for (const f of fontes) {
+  for (const f of fontes || []) {
     if (typeof f === "string") {           // formato antigo salvo no navegador
       chips.push(`<span class="fonte">${ICONE_DOC}${escapar(f)}</span>`);
       continue;
@@ -336,6 +343,16 @@ function htmlFontes(fontes) {
       );
     }
   }
+  for (const p of paginasOficiais || []) {
+    if (!p || !urlOficial(p.url)) continue;
+    const quando = p.data ? ` · ${escapar(p.data)}` : "";
+    chips.push(
+      `<a class="fonte fonte-site" href="${escapar(p.url)}" target="_blank" rel="noopener" ` +
+      `title="${escapar(p.titulo || "Página oficial")} — abrir no site">${ICONE_EXTERNO}${escapar(p.site || "Site oficial")} · ` +
+      `${escapar(String(p.titulo || "página oficial").slice(0, 48))}${quando}</a>`
+    );
+  }
+  if (!chips.length) return "";
   const extras = chips.length > MAX_FONTES ? `<span class="fonte fonte-mais">+${chips.length - MAX_FONTES}</span>` : "";
   return `<div class="fontes"><span class="fontes-titulo">${ICONE_LIVRO}Fontes consultadas (clique para abrir)</span>` +
     chips.slice(0, MAX_FONTES).join("") + extras + "</div>";
@@ -364,11 +381,14 @@ function htmlVerificacao(v) {
   let classe, texto, extra = "";
   if (v.status === "confirmado") {
     classe = "ok";
-    texto = `<strong>Conferido com o Sebrae e a Receita Federal${data}.</strong> As informações dos documentos continuam válidas.`;
+    texto = v.origem === "base_local"
+      ? `<strong>Conferido com o Sebrae e a Receita Federal.</strong> As informações dos documentos batem com as páginas oficiais coletadas${data}.`
+      : `<strong>Conferido com o Sebrae e a Receita Federal${data}.</strong> As informações dos documentos continuam válidas.`;
   } else if (v.status === "atualizada") {
     classe = "atualizada";
     const sites = [...new Set((v.fontes_web || []).map((f) => f.site))].join(" e ") || "Sebrae e Receita Federal";
-    texto = `<strong>Resposta atualizada.</strong> Os documentos (PDFs) estavam desatualizados; usei o que consta no site do ${escapar(sites)}${data}.`;
+    const coleta = v.origem === "base_local" ? " coletadas" : "";
+    texto = `<strong>Resposta atualizada.</strong> Os documentos (PDFs) estavam desatualizados; usei o que consta nas páginas oficiais (${escapar(sites)})${coleta}${data}.`;
     const divs = (v.divergencias || []).filter((d) => d && (d.pdf || d.site));
     if (divs.length) {
       extra = '<details class="verif-detalhes"><summary>O que mudou</summary><ul>' + divs.map((d) =>
@@ -479,7 +499,8 @@ function mostrarErro(texto, pergunta, msgUsuario) {
 // Preenche uma mensagem do bot já concluída: texto, fontes, atalhos e botão copiar.
 // "surgir" = fontes, atalhos e botão copiar aparecem com um leve fade, um após o outro.
 function finalizarBot(partes, dados, surgir = false) {
-  partes.balao.innerHTML = markdownSimples(dados.texto) + htmlFontes(dados.fontes) + htmlVerificacao(dados.verificacao) + htmlAcoes(dados.acoes) + htmlContatoNaf();
+  partes.balao.innerHTML = markdownSimples(dados.texto) + htmlFontes(dados.fontes, dados.paginas_oficiais) + htmlVerificacao(dados.verificacao) + htmlAcoes(dados.acoes) + htmlContatoNaf();
+  removerIndicadorConferencia(partes);
   const ferramentas = document.createElement("div");
   ferramentas.className = "msg-ferramentas";
   if (surgir) {
@@ -708,6 +729,24 @@ function acompanharRolagem() {
   if (distancia < 140) areaMensagens.scrollTop = areaMensagens.scrollHeight;
 }
 
+// Enquanto a resposta (já visível) é conferida nos sites oficiais, mostra um aviso discreto abaixo.
+function mostrarIndicadorConferencia(partes, texto) {
+  let el = partes.corpo.querySelector(".conferindo");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "conferindo";
+    el.setAttribute("role", "status");
+    partes.corpo.appendChild(el);
+  }
+  el.innerHTML = `<span class="conferindo-icone">${ICONES_VERIFICACAO.ok}</span><span>${escapar(texto)}</span>`;
+  acompanharRolagem();
+}
+
+function removerIndicadorConferencia(partes) {
+  const el = partes.corpo.querySelector(".conferindo");
+  if (el) el.remove();
+}
+
 async function enviarPergunta(pergunta) {
   if (!pergunta || enviando || !pronto) return;
   enviando = true;
@@ -749,17 +788,20 @@ async function enviarPergunta(pergunta) {
     } else {
       await lerEventos(r, (ev) => {
         if (ev.tipo === "status") {
-          // etapa em andamento (ex.: "Conferindo com o Sebrae e a Receita Federal…")
+          // etapa em andamento (ex.: "Consultando os documentos…" / "Conferindo com o Sebrae…")
           if (!texto) {
             partes.balao.innerHTML = '<span class="digitando" aria-hidden="true"><span></span><span></span><span></span></span>' +
               `<span class="status-etapa">${escapar(ev.conteudo)}</span>`;
+          } else {
+            mostrarIndicadorConferencia(partes, ev.conteudo);   // a resposta já está na tela
           }
         } else if (ev.tipo === "texto") {
           texto += ev.conteudo;
           digitador.atualizar(limparCitacoes(texto));
         } else if (ev.tipo === "fim") {
           final = ev;
-          digitador.atualizar(ev.resposta);   // texto final já limpo pelo servidor
+          // Resposta trocada pela versão corrigida com os sites: não "redigita", troca de uma vez.
+          if (!ev.substituida) digitador.atualizar(ev.resposta);   // texto final já limpo pelo servidor
         } else if (ev.tipo === "erro") {
           erro = ev.mensagem;
         }
@@ -771,14 +813,22 @@ async function enviarPergunta(pergunta) {
   }
 
   if (final) {
-    // Espera a "digitação" terminar antes de mostrar fontes, atalhos e sugestões.
-    digitador.fechar();
-    await digitador.terminou;
+    if (final.substituida) {
+      digitador.parar();
+    } else {
+      // Espera a "digitação" terminar antes de mostrar fontes, atalhos e sugestões.
+      digitador.fechar();
+      await digitador.terminou;
+    }
     const dados = {
-      papel: "assistant", texto: final.resposta, fontes: final.fontes,
+      papel: "assistant", texto: final.resposta, fontes: final.fontes, paginas_oficiais: final.paginas_oficiais,
       acoes: final.acoes, sugestoes: final.sugestoes, verificacao: final.verificacao,
     };
     finalizarBot(partes, dados, true);
+    if (final.substituida) {
+      partes.balao.classList.add("substituida");   // destaque rápido: "esta resposta foi atualizada"
+      setTimeout(() => partes.balao.classList.remove("substituida"), 2200);
+    }
     mensagens.push({ papel: "user", texto: pergunta }, dados);
     salvarConversa();
     await esperar(250);

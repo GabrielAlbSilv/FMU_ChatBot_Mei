@@ -228,6 +228,9 @@ a.marca-fmu:active { transform: scale(.97); }
   background: var(--card); border: 1px solid var(--borda); border-radius: 12px; font-size: 15px;
 }
 .documentos svg { width: 20px; height: 20px; color: var(--vermelho); flex-shrink: 0; }
+.documentos a { color: inherit; text-decoration: none; }
+.documentos a:hover { color: var(--vermelho); text-decoration: underline; }
+.documentos small { color: var(--suave); }
 
 .cta-final {
   text-align: center; border-radius: 28px; padding: 56px 24px;
@@ -388,6 +391,19 @@ a.fonte:hover { border-color: var(--vermelho); color: var(--vermelho); }
 .verif-detalhes summary { cursor: pointer; font-weight: 600; color: var(--vermelho); }
 .verif-detalhes ul { margin: 6px 0 0; padding-left: 18px; }
 .fontes-web { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* aviso "conferindo com os sites" enquanto a resposta já está na tela */
+.conferindo {
+  display: inline-flex; align-items: center; gap: 8px; margin: 6px 0 0 4px;
+  font-size: 12.5px; color: var(--suave); animation: surgir .3s ease both;
+}
+.conferindo-icone { display: grid; place-items: center; color: var(--vermelho); animation: pulsar 1.4s ease-in-out infinite; }
+.conferindo-icone svg { width: 15px; height: 15px; }
+@keyframes pulsar { 0%, 100% { opacity: .45; transform: scale(.92); } 50% { opacity: 1; transform: scale(1.05); } }
+/* resposta trocada pela versão corrigida com os sites oficiais */
+.balao.substituida { animation: destacar 2.2s ease; }
+@keyframes destacar { 0% { box-shadow: 0 0 0 0 rgba(200, 16, 46, .45); } 25% { box-shadow: 0 0 0 6px rgba(200, 16, 46, .18); } 100% { box-shadow: 0 0 0 0 rgba(200, 16, 46, 0); } }
+.fonte-site svg { color: var(--ok); }
 
 /* contato do NAF (QR Code + e-mail) */
 .contato-naf {

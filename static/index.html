@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Aplica o tema escolhido antes de desenhar a página (evita piscar) -->
   <script>try{var t=localStorage.getItem("chatbot-mei-tema");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 
@@ -207,7 +207,7 @@
           </div>
           <div class="passo">
             <h3>Conferência oficial</h3>
-            <p>Os dados que mudam com o tempo (valores, limites, prazos) são conferidos nos sites do Sebrae e da Receita Federal.</p>
+            <p>O chatbot visita periodicamente os sites do Sebrae e da Receita Federal, baixa os PDFs mais novos e confere valores, limites e prazos com eles.</p>
           </div>
           <div class="passo">
             <h3>Resposta com fontes</h3>
@@ -218,7 +218,7 @@
         <div class="secao-titulo" style="margin-top:56px">
           <h2 style="font-size:22px">Base de conhecimento</h2>
         </div>
-        <ul class="documentos">
+        <ul id="lista-documentos" class="documentos">
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Perguntas frequentes do Portal do Empreendedor (MEI)</li>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Perguntas e Respostas MEI e Simei (Comitê Gestor do Simples Nacional)</li>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Perguntas e Respostas do Imposto de Renda da Pessoa Física (Receita Federal)</li>
@@ -258,7 +258,11 @@
       async function checar() {
         try {
           const d = await (await fetch("/api/status", { cache: "no-store" })).json();
-          if (d.pronto) { el.textContent = "Chatbot online"; el.className = "pilula-status pronto"; return; }
+          if (d.pronto) {
+            el.textContent = "Chatbot online"; el.className = "pilula-status pronto";
+            mostrarDocumentos(d);
+            return;
+          }
           if (d.erro) { el.textContent = "Chatbot indisponível no momento"; el.className = "pilula-status erro"; return; }
           el.textContent = "Chatbot sendo preparado…";
         } catch (_) {
@@ -266,9 +270,29 @@
         }
         if (++tentativas < 90) setTimeout(checar, 3000);
       }
+      // Lista real da base (vem do servidor): PDFs indexados + coleta dos sites oficiais.
+      function mostrarDocumentos(d) {
+        const lista = document.getElementById("lista-documentos");
+        if (!lista || !Array.isArray(d.documentos) || !d.documentos.length) return;
+        const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const doc = lista.querySelector("li svg").outerHTML;
+        const escudo = lista.querySelector("li:last-child svg").outerHTML;
+        let html = d.documentos.map((x) =>
+          `<li>${doc}<a href="/documentos/${encodeURIComponent(x.arquivo)}" target="_blank" rel="noopener">${esc(x.titulo || x.arquivo)}` +
+          `${x.ano ? ` <small>(edição ${Number(x.ano)})</small>` : ""}</a></li>`).join("");
+        const web = d.base_web || {};
+        let textoWeb = "Conferência ao vivo com os sites do Sebrae e da Receita Federal";
+        if (web.paginas) {
+          const quando = web.atualizada_em ? new Date(web.atualizada_em) : null;
+          textoWeb = `${Number(web.paginas)} páginas oficiais do Sebrae e da Receita Federal, coletadas automaticamente` +
+            (quando && !isNaN(quando) ? ` (última coleta: ${quando.toLocaleDateString("pt-BR")})` : "");
+        }
+        html += `<li>${escudo}${esc(textoWeb)}</li>`;
+        lista.innerHTML = html;
+      }
       checar();
     })();
   </script>
-  <script src="tema.js?v=10"></script>
+  <script src="tema.js?v=11"></script>
 </body>
 </html>

@@ -19,6 +19,7 @@ for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
 
 import faulthandler
 import hashlib
+import hmac
 import importlib.util
 import json
 import re
@@ -108,12 +109,33 @@ def _preparar_rag():
         estado["retriever"], estado["llm"] = rag.iniciar_rag()
         print(f"[INFO] Chatbot pronto em {time.time() - inicio:.1f}s", flush=True)
         estado["pronto"] = True
+        _iniciar_base_web()
         faulthandler.cancel_dump_traceback_later()
     except BaseException as erro:  # noqa: BLE001
         faulthandler.cancel_dump_traceback_later()
         estado["erro"] = f"{type(erro).__name__}: {erro}"
         print(f"[ERRO] Falha ao iniciar o RAG: {erro}", flush=True)
         traceback.print_exc()
+
+
+def _modulo_base_web():
+    """base_web.py (coleta periódica dos sites oficiais); None se não puder ser carregado."""
+    try:
+        import base_web
+        return base_web
+    except Exception as erro:  # noqa: BLE001
+        print(f"[ERRO] base_web indisponível: {erro}", flush=True)
+        return None
+
+
+def _iniciar_base_web():
+    """Liga a coleta periódica dos sites do Sebrae e da Receita Federal (não atrapalha o chat se falhar)."""
+    modulo = _modulo_base_web()
+    if modulo:
+        try:
+            modulo.iniciar()
+        except Exception as erro:  # noqa: BLE001
+            print(f"[ERRO] base_web não iniciou: {erro}", flush=True)
 
 
 def garantir_inicializacao():
@@ -202,6 +224,9 @@ def status():
         indice_no_disco=(_AQUI / "indice" / "vetores.npy").is_file(),
         pdfs_indexados=_pdfs_indexados(),
         base_atualizada_em=_base_atualizada_em(),
+        base_web=_status_base_web(),
+        documentos=[{"arquivo": a, "titulo": i.get("titulo"), "ano": i.get("ano")}
+                    for a, i in sorted(getattr(modulo, "_info_docs", {}).items())],
         **_info_arquivo_rag(),
     )
     if iniciando:
@@ -209,6 +234,28 @@ def status():
         if quadro is not None:
             dados["pilha_thread_init"] = "".join(traceback.format_stack(quadro)).splitlines()[-12:]
     return jsonify(**dados)
+
+
+def _status_base_web():
+    modulo = sys.modules.get("base_web")
+    return modulo.status() if modulo else {"ativa": False}
+
+
+@app.post("/api/base-web/atualizar")
+def atualizar_base_web():
+    """Pede uma coleta dos sites oficiais agora (ex.: chamado pelo GitHub Actions).
+
+    Só funciona se a variável BASE_WEB_TOKEN estiver definida e o pedido trouxer o cabeçalho
+    X-Token com o mesmo valor. A coleta roda em segundo plano; a resposta volta na hora.
+    """
+    token = os.getenv("BASE_WEB_TOKEN")
+    if not token or not hmac.compare_digest(request.headers.get("X-Token", ""), token):
+        abort(404)
+    modulo = _modulo_base_web()
+    if not modulo or not modulo.ATIVA:
+        return jsonify(erro="base web desligada (BASE_WEB_ATIVA=0)"), 503
+    threading.Thread(target=modulo.atualizar_agora, name="base-web-manual", daemon=True).start()
+    return jsonify(ok=True, base_web=modulo.status()), 202
 
 
 @app.post("/api/chat")

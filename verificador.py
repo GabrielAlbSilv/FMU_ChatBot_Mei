@@ -318,6 +318,11 @@ def obter_trecho(url, consulta):
     if not doc:
         return None
     titulo, linhas = doc
+    try:   # guarda a página na base web local: a próxima pergunta parecida não precisa baixar de novo
+        import base_web
+        base_web.aprender(url, titulo, linhas)
+    except Exception as erro:  # noqa: BLE001
+        _log(f"não consegui guardar na base web: {type(erro).__name__}")
     texto = selecionar_trechos(linhas, consulta)
     if len(texto) < 80:
         return None
@@ -384,7 +389,31 @@ def descobrir_urls(consulta):
     return list(dict.fromkeys(mistas))[:MAX_PAGINAS]
 
 
+MIN_TRECHOS_LOCAIS = 2       # com isso de páginas na base web local, nem vai à internet
+
+
+def trechos_da_base_local(consulta, k=MAX_PAGINAS):
+    """Páginas oficiais já coletadas periodicamente (base_web.py). Instantâneo, sem internet."""
+    try:
+        import base_web
+        return [dict(t, origem="base_local") for t in base_web.buscar(consulta, k=k)]
+    except Exception as erro:  # noqa: BLE001
+        _log(f"base web indisponível: {type(erro).__name__}")
+        return []
+
+
 def coletar_trechos(consulta):
+    """Trechos oficiais para a conferência: primeiro a base local; se não bastar, busca ao vivo."""
+    locais = trechos_da_base_local(consulta)
+    if len(locais) >= MIN_TRECHOS_LOCAIS:
+        _log(f"{len(locais)} página(s) da base web local (sem acessar a internet agora)")
+        return locais
+    vivos = coletar_trechos_ao_vivo(consulta)
+    urls = {t["url"] for t in vivos}
+    return (vivos + [t for t in locais if t["url"] not in urls])[:MAX_PAGINAS]
+
+
+def coletar_trechos_ao_vivo(consulta):
     """Lê as páginas oficiais encontradas. Devolve lista de {"url","titulo","site","texto"}."""
     urls = descobrir_urls(consulta)
     _log(f"páginas candidatas: {urls}")
@@ -457,8 +486,10 @@ def _json_da_resposta(texto):
 
 def comparar(cliente, modelo, opcoes, pergunta, rascunho, trechos_pdf, trechos_web):
     """Chama o LLM para comparar o rascunho com os sites. Devolve o dicionário do veredito."""
-    pdfs = "\n\n".join(f"[{i}] (PDF {t['fonte']}, p. {t['pagina']})\n{t['texto']}"
-                       for i, t in enumerate(trechos_pdf, start=1))
+    pdfs = "\n\n".join(
+        (f"[{i}] (página oficial: {t.get('site', '')} — {t.get('titulo', '')})" if t.get("url")
+         else f"[{i}] (PDF {t['fonte']}, p. {t['pagina']})") + f"\n{t['texto']}"
+        for i, t in enumerate(trechos_pdf, start=1))
     web = "\n\n".join(f"[W{i}] ({t['site']} — {t['titulo']} — {t['url']})\n{t['texto']}"
                       for i, t in enumerate(trechos_web, start=1))
     usuario = (f"PERGUNTA:\n{pergunta}\n\nRASCUNHO (baseado nos PDFs):\n{rascunho}\n\n"
@@ -507,7 +538,7 @@ def deve_verificar(pergunta, usou_pdf):
     return ATIVO and (usou_pdf or bool(_TEMAS.search(_sem_acento(pergunta))))
 
 
-def verificar(cliente, modelo, opcoes, pergunta, consulta_busca, rascunho, trechos_pdf):
+def verificar(cliente, modelo, opcoes, pergunta, consulta_busca, rascunho, trechos_pdf, trechos_web=None):
     """Confere `rascunho` com os sites permitidos.
 
     Devolve um dicionário:
@@ -517,14 +548,27 @@ def verificar(cliente, modelo, opcoes, pergunta, consulta_busca, rascunho, trech
       resposta: texto novo (só em "atualizada", já sem os marcadores [W#])
       fontes_web: [{"titulo","url","site"}]   divergencias: [{"tema","pdf","site","fonte"}]
       data: data da conferência (dd/mm/aaaa)
+    trechos_web: trechos já coletados (opcional); sem ele, coleta aqui (base local -> ao vivo).
     """
     base = {"status": "indisponivel", "fontes_web": [], "divergencias": [],
             "data": datetime.now(FUSO_BR).strftime("%d/%m/%Y")}
     try:
-        trechos_web = coletar_trechos(consulta_busca or pergunta)
+        # trechos_web pode vir pronto: o rag.py começa a coleta em paralelo com o rascunho
+        if trechos_web is None:
+            trechos_web = coletar_trechos(consulta_busca or pergunta)
     except Exception as erro:  # noqa: BLE001
         _log(f"coleta falhou: {type(erro).__name__}: {erro}")
         return base
+    if trechos_web and all(t.get("origem") == "base_local" for t in trechos_web):
+        # páginas da cópia local: a data mostrada é a da coleta, não a de hoje
+        try:
+            import base_web
+            quando = base_web.status().get("atualizada_em")
+            if quando:
+                base["data"] = datetime.fromisoformat(quando).strftime("%d/%m/%Y")
+        except Exception:  # noqa: BLE001
+            pass
+        base["origem"] = "base_local"
     if not trechos_web:
         _log("nenhuma página oficial pôde ser lida: conferência indisponível")
         return dict(base, motivo="não consegui ler páginas do Sebrae nem da Receita Federal", consultadas=0)

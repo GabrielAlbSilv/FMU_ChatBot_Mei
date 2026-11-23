@@ -20,10 +20,11 @@ import re
 import time
 import unicodedata
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-VERSAO = "rag-leve-v10"
+VERSAO = "rag-leve-v11"
 ETAPA = "rag.py novo carregando"
 
 
@@ -57,11 +58,22 @@ VERSAO_INDICE = "v5-hibrido"   # v5: ignora também o sumário "assunto ... 001"
 # (o índice é reconstruído automaticamente quando o modelo muda; usa mais RAM).
 NOME_MODELO_EMB = os.getenv("MODELO_EMBEDDINGS", "sentence-transformers/all-MiniLM-L6-v2")
 MODELO_LLM = os.getenv("MODELO_LLM", "openai/gpt-oss-120b")
-# Modelo usado só para reescrever a pergunta antes da busca (pode ser um menor/mais rápido).
-MODELO_REESCRITA = os.getenv("MODELO_REESCRITA", MODELO_LLM)
+# Modelo usado só para reescrever a pergunta antes da busca. O padrão é o gpt-oss-20b, cerca de
+# 2x mais rápido que o 120b e suficiente para essa tarefa curta. Se a Groq recusar o modelo
+# (ex.: foi descontinuado), o bot passa a usar o MODELO_LLM sozinho.
+MODELO_REESCRITA = os.getenv("MODELO_REESCRITA", "openai/gpt-oss-20b")
 REESCREVER_CONSULTA = os.getenv("REESCREVER_CONSULTA", "1") != "0"
 # Modelo da etapa que compara a resposta dos PDFs com os sites do Sebrae e da Receita Federal.
 MODELO_VERIFICACAO = os.getenv("MODELO_VERIFICACAO", MODELO_LLM)
+# Quanto o modelo "pensa" antes de responder (low | medium | high). "low" responde bem mais rápido.
+ESFORCO_RESPOSTA = os.getenv("ESFORCO_RESPOSTA", "low")
+# Quando conferir com os sites:
+#   "depois" (padrão): a resposta aparece na hora (dos PDFs) e a conferência roda em seguida; se algo
+#                      estiver desatualizado, a resposta é trocada pela versão corrigida.
+#   "antes":           comportamento antigo — só mostra a resposta depois de conferida (mais lento).
+CONFERENCIA_MODO = os.getenv("CONFERENCIA_MODO", "depois").strip().lower()
+# Junta à resposta até N páginas oficiais recentes da base web local (base_web.py). 0 = desliga.
+WEB_NA_RESPOSTA = int(os.getenv("WEB_NA_RESPOSTA", "2") or 0)
 MAX_HISTORICO = 6          # mensagens anteriores (usuário + bot) enviadas ao LLM
 MAX_CHARS_HISTORICO = 1500  # por mensagem
 TAM_CHUNK = 900
@@ -102,6 +114,10 @@ DOCUMENTOS_CONHECIDOS = {
                               "Imposto de Renda Pessoa Física — Perguntas e Respostas (Receita Federal)"),
     "7-Perguntas&Respostas_SimplesNacional.pdf": ("P&R Simples Nacional",
                                                   "Perguntas e Respostas Simples Nacional (Comitê Gestor)"),
+    "8-Exclusao_SimplesNacional_2026.pdf": ("Exclusão do Simples 2026",
+                                            "Exclusão do Simples Nacional 2026 — Perguntas e Respostas (Receita Federal)"),
+    "15-Roteiro_Opcao_SimplesNacional_2027.pdf": ("Roteiro opção Simples 2027",
+                                                  "Roteiro da Opção pelo Simples Nacional para 2027 (Comitê Gestor)"),
 }
 _info_docs = {}   # arquivo -> {"rotulo", "titulo", "ano"}
 
@@ -509,8 +525,9 @@ SOBRE_O_BOT = """\
 - Base de conhecimento: cartilhas e documentos de perguntas e respostas sobre MEI e
   sobre impostos da Receita Federal, além de conhecimento geral para explicar conceitos
   básicos.
-- Atualização: antes de responder, confere a resposta feita com os PDFs nos sites do Sebrae e da
-  Receita Federal (únicas fontes de comparação) e, se algo estiver desatualizado, corrige.
+- Atualização: visita periodicamente os sites do Sebrae e da Receita Federal (únicas fontes da
+  internet aceitas), guarda as páginas e PDFs mais novos e confere cada resposta com eles; se algo
+  estiver desatualizado, corrige.
 - Atendimento humano: para casos pessoais ou mais complexos, a pessoa pode agendar atendimento
   presencial ou online com o NAF (Núcleo de Apoio Fiscal) da FMU pelo e-mail naf@fmu.br ou pelo
   formulário que aparece abaixo de cada resposta.
@@ -557,8 +574,11 @@ para pequenos empreendedores e pessoas físicas brasileiras. Responda sempre em 
 
 Nunca contradiga os documentos com conhecimento externo. Se as fontes não cobrem a
 dúvida por completo, responda o que for possível e diga claramente o que faltou.
-Cada trecho informa o documento e o ano da edição. Se dois trechos divergirem, prefira o
-documento mais recente e avise que a regra pode ter mudado. Use a data de hoje (informada
+Cada trecho informa o documento e o ano da edição. Alguns trechos vêm de páginas oficiais
+do Sebrae ou da Receita Federal coletadas recentemente ("página oficial"/"PDF oficial mais
+novo"): são a informação mais atual. Se dois trechos divergirem, prefira o mais recente (em
+geral a página oficial), diga de onde veio (ex.: "Segundo o site da Receita Federal, ...") e
+avise que a regra mudou. Use a data de hoje (informada
 junto da pergunta) para entender "este ano", "ano passado" e prazos, e diga o ano a que um
 valor ou prazo se refere quando o documento informar.
 Use o histórico da conversa para entender perguntas de continuação
@@ -642,22 +662,40 @@ def reescrever_consulta(cliente, pergunta, historico):
     )
     entrada = (f"Histórico recente:\n{conversa}\n\n" if conversa else "") + \
         f"Última pergunta do usuário: {pergunta}"
-    try:
-        r = cliente.chat.completions.create(
-            model=MODELO_REESCRITA,
-            temperature=0,
-            # folga para o raciocínio interno dos modelos gpt-oss (conta como saída)
-            max_completion_tokens=700,
-            messages=[{"role": "system", "content": PROMPT_REESCRITA},
-                      {"role": "user", "content": entrada}],
-            **_opcoes_modelo(MODELO_REESCRITA, "low"),
-        )
-        linhas = (r.choices[0].message.content or "").strip().splitlines()
-        consulta = linhas[0].strip().strip('"') if linhas else ""
-        return consulta[:500] or None
-    except Exception as erro:  # noqa: BLE001
-        print(f"[RAG] reescrita da consulta falhou: {erro}", flush=True)
-        return None
+    global _modelo_reescrita
+    for tentativa in range(2):
+        modelo = _modelo_reescrita
+        try:
+            r = cliente.chat.completions.create(
+                model=modelo,
+                temperature=0,
+                # folga para o raciocínio interno dos modelos gpt-oss (conta como saída)
+                max_completion_tokens=700,
+                messages=[{"role": "system", "content": PROMPT_REESCRITA},
+                          {"role": "user", "content": entrada}],
+                **_opcoes_modelo(modelo, "low"),
+            )
+            linhas = (r.choices[0].message.content or "").strip().splitlines()
+            consulta = linhas[0].strip().strip('"') if linhas else ""
+            return consulta[:500] or None
+        except Exception as erro:  # noqa: BLE001
+            if tentativa == 0 and modelo != MODELO_LLM and _erro_de_modelo(erro):
+                print(f"[RAG] modelo de reescrita '{modelo}' indisponível; usando {MODELO_LLM}", flush=True)
+                _modelo_reescrita = MODELO_LLM
+                continue
+            print(f"[RAG] reescrita da consulta falhou: {erro}", flush=True)
+            return None
+    return None
+
+
+_modelo_reescrita = MODELO_REESCRITA
+
+
+def _erro_de_modelo(erro):
+    """Erro da Groq do tipo 'modelo não existe / foi descontinuado' (e não limite ou rede)."""
+    status = getattr(erro, "status_code", None)
+    texto = str(erro).lower()
+    return status in (400, 404) and ("model" in texto or "decommission" in texto)
 
 
 # [3]  [1, 4]  [2-3]  e também o formato 【3†...】 que alguns modelos usam
@@ -688,12 +726,24 @@ def _formatar_fontes(trechos):
     """[{"arquivo": "4-....pdf", "paginas": [7, 9], "rotulo": "P&R MEI e Simei", "titulo": "..."}, ...]"""
     paginas = defaultdict(set)
     for t in trechos:
+        if t.get("url"):          # página oficial da base web: vai em _formatar_paginas_oficiais
+            continue
         paginas[t["fonte"]].update(int(p) for p in (t.get("paginas") or [t["pagina"]]))
     saida = []
     for fonte, pags in sorted(paginas.items()):
         info = info_documento(fonte)
         saida.append({"arquivo": fonte, "paginas": sorted(pags), "rotulo": info["rotulo"],
                       "titulo": info["titulo"] + (f" (edição {info['ano']})" if info["ano"] else "")})
+    return saida
+
+
+def _formatar_paginas_oficiais(trechos):
+    """Páginas dos sites oficiais usadas na resposta: [{"url","titulo","site","data"}]."""
+    vistas, saida = set(), []
+    for t in trechos:
+        if t.get("url") and t["url"] not in vistas and verificador.url_permitida(t["url"]):
+            vistas.add(t["url"])
+            saida.append({k: t.get(k, "") for k in ("url", "titulo", "site", "data")})
     return saida
 
 
@@ -807,6 +857,10 @@ def _cache_gravar(chave, resultado):
 
 # -------------------------------------------------------------------- geração
 def _cabecalho_trecho(t):
+    if t.get("url"):                                   # página oficial (base web)
+        quando = f", publicada/atualizada em {t['data']}" if t.get("data") else ""
+        tipo = "PDF oficial mais novo" if t.get("tipo") == "pdf" else "página oficial"
+        return f"(Fonte: {tipo} — site {t.get('site', '')}: {t.get('titulo', '')}{quando})"
     info = info_documento(t["fonte"])
     pags = t.get("paginas") or [t["pagina"]]
     if len(pags) == 1:
@@ -858,14 +912,58 @@ def eh_conversa_simples(pergunta):
             and any(p in _ANCORAS_CONVERSA for p in palavras))
 
 
+_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="conferencia")
+
+
+def trechos_da_web(consulta, k=WEB_NA_RESPOSTA):
+    """Páginas oficiais recentes da base web local, no mesmo formato dos trechos dos PDFs."""
+    if k <= 0:
+        return []
+    try:
+        import base_web
+        achados = base_web.buscar(consulta, k=k, min_termos=3, limite_chars=1600)
+    except Exception as erro:  # noqa: BLE001
+        print(f"[RAG] base web indisponível: {erro}", flush=True)
+        return []
+    return [{"fonte": "web", "pagina": 0, "url": a["url"], "titulo": a["titulo"], "site": a["site"],
+             "data": a.get("data", ""), "tipo": a.get("tipo", "pagina"), "texto": a["texto"]} for a in achados]
+
+
+def _gerar_texto(cliente, mensagens):
+    """Chama o modelo em streaming. Produz ("texto", pedaço) e, no fim, ("completo", texto_inteiro)."""
+    fluxo = cliente.chat.completions.create(
+        model=MODELO_LLM,
+        temperature=0.2,
+        stream=True,
+        messages=mensagens,
+        **_opcoes_modelo(MODELO_LLM, ESFORCO_RESPOSTA),
+    )
+    completo, enviado = "", 0
+    for pedaco in fluxo:
+        if not pedaco.choices:
+            continue
+        completo += pedaco.choices[0].delta.content or ""
+        # Não envia a linha de sugestões (começa com "@@") nem um "@" que pode iniciá-la.
+        pos = completo.find("@@")
+        limite = pos if pos >= 0 else len(completo) - (1 if completo.endswith("@") else 0)
+        if limite > enviado:
+            yield "texto", completo[enviado:limite]
+            enviado = limite
+    yield "completo", completo
+
+
 def responder_stream(indice, cliente, pergunta, historico=None):
     """Gera a resposta aos poucos.
 
     Produz tuplas:
-      ("status", mensagem) -> etapa em andamento (só com a conferência nos sites ligada)
+      ("status", mensagem) -> etapa em andamento ("Consultando os documentos…", "Conferindo…")
       ("texto", pedaço)   -> trecho novo da resposta (pode conter marcadores [n])
-      ("fim", resultado)  -> {"resposta", "fontes", "acoes", "sugestoes", "verificacao", "cache"}
+      ("fim", resultado)  -> {"resposta", "fontes", "paginas_oficiais", "acoes", "sugestoes",
+                              "verificacao", "substituida", "cache"}
     Erros da Groq (ex.: limite de uso) são propagados como exceção.
+
+    Velocidade: a coleta das páginas oficiais para a conferência começa EM PARALELO com a
+    resposta; no modo "depois" (padrão) a pessoa já lê a resposta enquanto ela é conferida.
     """
     historico = _sanear_historico(historico)
     chave = None if historico else _chave_cache(pergunta)
@@ -891,48 +989,73 @@ def responder_stream(indice, cliente, pergunta, historico=None):
             if anteriores:
                 consultas.append(f"{anteriores[-1]} {pergunta}")
         print(f"[RAG] consultas: {consultas}", flush=True)
-        trechos = indice.buscar_varias(consultas)
+        trechos = indice.buscar_varias(consultas) + trechos_da_web(consultas[-1])
 
-    if verificador.ATIVO and not conversa:
-        yield from _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico, chave)
+    conferir = verificador.ATIVO and not conversa
+    # Começa já a juntar as páginas oficiais (base local -> internet), enquanto o modelo escreve.
+    coleta = _executor.submit(verificador.coletar_trechos, consultas[-1]) if conferir else None
+
+    if conferir and CONFERENCIA_MODO == "antes":
+        yield from _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico, chave, coleta)
         return
 
-    fluxo = cliente.chat.completions.create(
-        model=MODELO_LLM,
-        temperature=0.2,
-        stream=True,
-        messages=montar_mensagens(trechos, pergunta, historico),
-        **_opcoes_modelo(MODELO_LLM, "medium"),
-    )
-
-    completo, enviado = "", 0
-    for pedaco in fluxo:
-        if not pedaco.choices:
-            continue
-        completo += pedaco.choices[0].delta.content or ""
-        # Não envia a linha de sugestões (começa com "@@") nem um "@" que pode iniciá-la.
-        pos = completo.find("@@")
-        limite = pos if pos >= 0 else len(completo) - (1 if completo.endswith("@") else 0)
-        if limite > enviado:
-            yield "texto", completo[enviado:limite]
-            enviado = limite
+    completo = ""
+    for tipo, dado in _gerar_texto(cliente, montar_mensagens(trechos, pergunta, historico)):
+        if tipo == "texto":
+            yield "texto", dado
+        else:
+            completo = dado
 
     texto, sugestoes = _separar_sugestoes(completo)
     resposta, citados = _extrair_citacoes(texto, len(trechos))
+    verificacao, substituida = {"status": "nao_aplicavel"}, False
+    if conferir and resposta and verificador.deve_verificar(pergunta, bool(citados)):
+        yield "status", "Conferindo com o Sebrae e a Receita Federal…"
+        resposta, citados, verificacao = _conferir(cliente, pergunta, consultas, resposta, citados, trechos, coleta)
+        substituida = verificacao["status"] == "atualizada"
+    elif coleta:
+        coleta.cancel()
+    yield "fim", dict(_montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificacao, chave),
+                      substituida=substituida, cache=False)
+
+
+def _conferir(cliente, pergunta, consultas, resposta, citados, trechos, coleta):
+    """Compara a resposta com as páginas oficiais. Devolve (resposta, citados, verificacao)."""
+    trechos_web = None
+    if coleta is not None:
+        try:
+            trechos_web = coleta.result(timeout=verificador.TEMPO_TOTAL + 10)
+        except Exception as erro:  # noqa: BLE001  (tempo esgotado, rede...)
+            print(f"[RAG] coleta paralela falhou: {type(erro).__name__}", flush=True)
+            trechos_web = []
+    verificacao = verificador.verificar(
+        cliente, MODELO_VERIFICACAO, _opcoes_modelo(MODELO_VERIFICACAO, "low"),
+        pergunta, consultas[-1], resposta, trechos, trechos_web=trechos_web)
+    if verificacao["status"] == "atualizada":
+        print(f"[RAG] resposta ATUALIZADA pelos sites: {verificacao['divergencias']}", flush=True)
+        resposta, citados = _extrair_citacoes(verificacao.pop("resposta"), len(trechos))
+    verificacao.pop("resposta", None)
+    return resposta, citados, verificacao
+
+
+def _montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificacao, chave):
+    usados = [trechos[i] for i in sorted(citados)]
     resultado = {
         "resposta": resposta,
-        "fontes": _formatar_fontes([trechos[i] for i in sorted(citados)]),
+        "fontes": _formatar_fontes(usados),
+        "paginas_oficiais": _formatar_paginas_oficiais(usados),
         "acoes": detectar_acoes(pergunta, resposta),
         "sugestoes": sugestoes,
-        "verificacao": {"status": "nao_aplicavel"},
+        "verificacao": verificacao,
     }
-    if chave and resposta:
+    # Não guarda no cache quando os sites estavam fora do ar: da próxima vez tenta de novo.
+    if chave and resposta and verificacao.get("status") != "indisponivel":
         _cache_gravar(chave, resultado)
-    yield "fim", dict(resultado, cache=False)
+    return resultado
 
 
-def _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico, chave):
-    """Rascunho (PDFs) -> comparação com Sebrae/Receita Federal -> resposta final.
+def _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico, chave, coleta=None):
+    """Modo "antes": rascunho (PDFs) -> comparação com Sebrae/Receita Federal -> resposta final.
 
     O rascunho NÃO é mostrado: o usuário só vê a versão já conferida (ou a dos PDFs, se não
     foi possível conferir). Eventos extras ("status") deixam a tela informar cada etapa.
@@ -943,7 +1066,7 @@ def _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico,
         temperature=0.2,
         stream=False,
         messages=montar_mensagens(trechos, pergunta, historico),
-        **_opcoes_modelo(MODELO_LLM, "medium"),
+        **_opcoes_modelo(MODELO_LLM, ESFORCO_RESPOSTA),
     )
     completo = r.choices[0].message.content or ""
     texto, sugestoes = _separar_sugestoes(completo)
@@ -952,26 +1075,13 @@ def _responder_com_conferencia(cliente, trechos, consultas, pergunta, historico,
 
     if resposta and verificador.deve_verificar(pergunta, bool(citados)):
         yield "status", "Conferindo com o Sebrae e a Receita Federal…"
-        verificacao = verificador.verificar(
-            cliente, MODELO_VERIFICACAO, _opcoes_modelo(MODELO_VERIFICACAO, "low"),
-            pergunta, consultas[-1], resposta, trechos)
-        if verificacao["status"] == "atualizada":
-            print(f"[RAG] resposta ATUALIZADA pelos sites: {verificacao['divergencias']}", flush=True)
-            resposta, citados = _extrair_citacoes(verificacao.pop("resposta"), len(trechos))
-    verificacao.pop("resposta", None)
+        resposta, citados, verificacao = _conferir(cliente, pergunta, consultas, resposta, citados, trechos, coleta)
+    elif coleta is not None:
+        coleta.cancel()
 
     yield "texto", resposta
-    resultado = {
-        "resposta": resposta,
-        "fontes": _formatar_fontes([trechos[i] for i in sorted(citados)]),
-        "acoes": detectar_acoes(pergunta, resposta),
-        "sugestoes": sugestoes,
-        "verificacao": verificacao,
-    }
-    # Não guarda no cache quando os sites estavam fora do ar: da próxima vez tenta de novo.
-    if chave and resposta and verificacao["status"] != "indisponivel":
-        _cache_gravar(chave, resultado)
-    yield "fim", dict(resultado, cache=False)
+    yield "fim", dict(_montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificacao, chave),
+                      substituida=False, cache=False)
 
 
 def responder(indice, cliente, pergunta, historico=None):

@@ -52,3 +52,23 @@
 	-> baixa os 3 PDFs gerais (MEI e Simei, IRPF 2026, Simples Nacional) para esta pasta, com os nomes
 	   4-Perguntas&Respostas3_MEI.pdf, 5-Impostos_PF_MEI.pdf e 7-Perguntas&Respostas_SimplesNacional.pdf.
 	-> o relatorio_atualizacao.md mostra o que foi baixado. Depois faça commit/deploy (o Render reindexa).
+
+12. Base sempre atualizada (sites + PDFs) — funciona sozinho, nada a configurar:
+	- No build do Render, preparar_base.py baixa as versões mais novas dos PDFs (atualizar_base.py), refaz o
+	  índice e faz a primeira coleta dos sites do Sebrae e da Receita Federal (base_web.py).
+	- Com o servidor no ar, a cada 12 h (BASE_WEB_HORAS) ele visita de novo os sites (fontes_oficiais.json:
+	  "paginas" e "rastrear"), guarda só o que trata de MEI/Receita Federal e confere se algum PDF da base
+	  ganhou versão nova no site; se ganhou, já passa a usar a nova, sem esperar deploy.
+	- Coletar agora, na sua máquina:  python base_web.py
+	- Ver o estado: http://localhost:5000/api/status  (campo "base_web")
+	- O GitHub Actions roda todo dia. Opcional (Settings > Secrets and variables > Actions):
+	    Variable PUBLICAR_DIRETO=true      -> publica os PDFs novos sem abrir Pull Request
+	    Secret  RENDER_DEPLOY_HOOK         -> pede um deploy por dia (o build traz PDFs e sites novos)
+	    Secrets FISCON_URL + BASE_WEB_TOKEN -> pede ao servidor uma coleta dos sites
+	      (crie a variável BASE_WEB_TOKEN com o mesmo valor no Render > Environment)
+
+13. Velocidade:
+	- A resposta aparece enquanto é escrita; a conferência com os sites roda logo depois (e em paralelo).
+	  Se algo estiver desatualizado, a resposta é trocada pela versão corrigida, com o aviso "Resposta atualizada".
+	- A conferência usa a cópia local dos sites (instantânea); só vai à internet se a cópia não tiver o assunto.
+	- Para voltar ao comportamento antigo (só mostrar depois de conferir): CONFERENCIA_MODO=antes

@@ -139,8 +139,13 @@ def descobrir_link(pagina_indice, padrao):
 
 
 # ------------------------------------------------------------------------ atualização
-def processar(fonte, estado, simular, ano_minimo=0):
-    """Atualiza UM PDF. Devolve {"arquivo","status","detalhe","url"}; muda `estado` se gravou."""
+def processar(fonte, estado, simular, ano_minimo=0, guardar_corpo=False):
+    """Atualiza UM PDF. Devolve {"arquivo","status","detalhe","url"}; muda `estado` se gravou.
+
+    guardar_corpo=True: quando há versão nova, o conteúdo baixado vai em res["corpo"] (usado pelo
+    base_web.py para ler o PDF novo sem gravar nada na pasta do projeto).
+    Se a fonte tiver "urls_alternativas", elas são tentadas quando o endereço principal falha.
+    """
     nome = fonte.get("arquivo", "")
     res = {"arquivo": nome, "titulo": fonte.get("titulo", nome), "url": fonte.get("url", ""),
            "status": "erro", "detalhe": ""}
@@ -169,6 +174,13 @@ def processar(fonte, estado, simular, ano_minimo=0):
             cond["If-Modified-Since"] = anterior["last_modified"]
 
     codigo, corpo, cab = V.baixar(url, ("pdf", "octet-stream"), MAX_BYTES, extra=cond, timeout=TIMEOUT_DOWNLOAD)
+    if codigo not in (200, 304):
+        for alternativa in fonte.get("urls_alternativas") or []:   # endereço mudou de pasta no site?
+            if alternativa != url and V.url_permitida(alternativa):
+                codigo, corpo, cab = V.baixar(alternativa, ("pdf", "octet-stream"), MAX_BYTES, timeout=TIMEOUT_DOWNLOAD)
+                if codigo == 200:
+                    url = res["url"] = alternativa
+                    break
     if codigo == 304:
         return dict(res, status="igual", detalhe="servidor informou que não mudou (304)")
     if codigo != 200:
@@ -200,6 +212,8 @@ def processar(fonte, estado, simular, ano_minimo=0):
 
     res["status"] = "novo" if novo_arquivo else "atualizado"
     res["detalhe"] = (f"{paginas} páginas" if novo_arquivo else f"{antigas} → {paginas} páginas")
+    if guardar_corpo:
+        res["corpo"] = corpo
     if not simular:
         tmp = destino.with_suffix(".pdf.tmp")
         tmp.write_bytes(corpo)

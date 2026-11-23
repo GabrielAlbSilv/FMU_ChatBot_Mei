@@ -446,5 +446,209 @@ class Respostas(unittest.TestCase):
         self.assertEqual(eventos[-1][1]["verificacao"]["status"], "nao_aplicavel")
 
 
+PAGINA_INICIO = """<html><head><title>Notícias - Receita Federal</title></head><body>
+<a href="/receitafederal/pt-br/assuntos/noticias/2026/maio/mei-tem-ate-31-de-maio-para-entregar-declaracao">MEI</a>
+<a href="/receitafederal/pt-br/assuntos/noticias/2026/maio/receita-lanca-curso-de-libras">fora do tema</a>
+<a href="https://malicioso.com/receitafederal/pt-br/assuntos/noticias/2026/mei-golpe">golpe</a>
+<p>Página de notícias da Receita Federal sobre impostos e serviços ao cidadão brasileiro.</p></body></html>"""
+PAGINA_MEI = """<html><head><title>MEI tem até 31 de maio para entregar a declaração anual</title></head><body>
+<p>Publicado em 02/05/2026 10h00. Atualizado em 05/05/2026 14h12.</p>
+<p>O Microempreendedor Individual (MEI) deve entregar a DASN-SIMEI até 31 de maio de 2026, informando o faturamento de 2025.</p>
+<p>A multa por atraso na entrega da declaração anual do MEI é de 2% ao mês, limitada a 20%, com valor mínimo de R$ 50,00.</p>
+</body></html>"""
+PAGINA_SEM_TEMA = "<html><head><title>Futebol</title></head><body><p>O campeonato de futebol começa no domingo com muitos jogos.</p></body></html>"
+
+
+class BaseWeb(unittest.TestCase):
+    """Coleta periódica dos sites oficiais (base_web.py), sem internet."""
+
+    def setUp(self):
+        import base_web as B
+        self.B = B
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        sementes = Path(self.tmp.name) / "fontes_oficiais.json"
+        sementes.write_text(json.dumps({"paginas": [{"palavras": ["futebol"], "urls": ["https://sebrae.com.br/futebol"]}],
+                                        "rastrear": [{"inicio": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias",
+                                                      "seguir": r"/noticias/20\d\d/.*mei", "max": 5}]}), encoding="utf-8")
+        paginas = {"https://www.gov.br/receitafederal/pt-br/assuntos/noticias": PAGINA_INICIO,
+                   "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/maio/mei-tem-ate-31-de-maio-para-entregar-declaracao": PAGINA_MEI,
+                   "https://sebrae.com.br/futebol": PAGINA_SEM_TEMA}
+        self.baixados = []
+
+        def falso_baixar(url, *a, **k):
+            self.baixados.append(url)
+            if url in paginas:
+                return 200, paginas[url].encode(), {"Content-Type": "text/html; charset=utf-8"}
+            return None, None, None
+        for p in (mock.patch.object(v, "ARQ_SEMENTES", sementes),
+                  mock.patch.object(v, "baixar", side_effect=falso_baixar),
+                  mock.patch.object(B, "ARQ_BASE", Path(self.tmp.name) / "base_web.json"),
+                  mock.patch.object(B, "PASTA", Path(self.tmp.name)),
+                  mock.patch.object(B, "VERIFICAR_PDFS", False)):
+            p.start()
+            self.addCleanup(p.stop)
+        B._estado["paginas"] = {}
+        B._reindexar()
+        self.addCleanup(lambda: (B._estado.update(paginas={}, atualizada_em=None), B._reindexar()))
+
+    def test_coleta_segue_links_permitidos_e_filtra_o_tema(self):
+        st = self.B.atualizar_agora()
+        self.assertTrue(all(v.url_permitida(u) for u in self.baixados))           # nunca saiu da lista
+        self.assertNotIn("https://malicioso.com/receitafederal/pt-br/assuntos/noticias/2026/mei-golpe", self.baixados)
+        urls = set(self.B._estado["paginas"])
+        self.assertIn("https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/maio/mei-tem-ate-31-de-maio-para-entregar-declaracao", urls)
+        self.assertNotIn("https://sebrae.com.br/futebol", urls)                      # fora do tema MEI/Receita
+        self.assertTrue(st["atualizada_em"])
+        self.assertTrue(self.B.ARQ_BASE.is_file())                                 # salvo em disco
+
+    def test_busca_local_e_data_da_pagina(self):
+        self.B.atualizar_agora()
+        r = self.B.buscar("multa atraso declaração anual MEI")
+        self.assertEqual(len(r), 1)
+        self.assertIn("2% ao mês", r[0]["texto"])
+        self.assertEqual(r[0]["data"], "05/05/2026")
+        self.assertEqual(r[0]["site"], "Receita Federal")
+        self.assertEqual(self.B.buscar("receita de bolo de chocolate"), [])
+
+    def test_base_salva_e_recarregada(self):
+        self.B.atualizar_agora()
+        self.B._estado["paginas"] = {}
+        self.B._reindexar()
+        self.assertEqual(self.B.buscar("multa declaração MEI"), [])
+        self.assertTrue(self.B.carregar())
+        self.assertTrue(self.B.buscar("multa declaração MEI"))
+
+    def test_pagina_que_falha_mantem_a_versao_anterior(self):
+        data_boa = self.B.atualizar_agora()["atualizada_em"]
+        with mock.patch.object(v, "baixar", return_value=(None, None, None)):
+            st = self.B.atualizar_agora()
+        self.assertTrue(self.B.buscar("multa declaração MEI"))
+        self.assertEqual(st["atualizada_em"], data_boa)          # sem internet: não finge que atualizou
+        self.assertTrue(st["ultimo_erro"])
+
+    def test_conferencia_usa_base_local_sem_internet(self):
+        self.B.atualizar_agora()
+        self.B.aprender("https://sebrae.com.br/mei-declaracao",
+                        "Declaração do MEI", ["A declaração anual do MEI (DASN-SIMEI) tem multa mínima de R$ 50,00 por atraso."])
+        with mock.patch.object(v, "coletar_trechos_ao_vivo", side_effect=AssertionError("não devia ir à internet")):
+            trechos = v.coletar_trechos("multa atraso declaração anual MEI")
+        self.assertEqual(len(trechos), 2)
+        self.assertTrue(all(t["origem"] == "base_local" for t in trechos))
+        with mock.patch.object(v, "comparar", return_value={"veredito": "confirmado", "motivo": "ok"}):
+            r = v.verificar(None, "m", {}, "p", "c", "r", PDFS, trechos_web=trechos)
+        self.assertEqual((r["status"], r["origem"]), ("confirmado", "base_local"))
+
+    def test_sem_nada_local_busca_ao_vivo(self):
+        with mock.patch.object(v, "coletar_trechos_ao_vivo", return_value=WEB) as ao_vivo:
+            self.assertEqual(v.coletar_trechos("valor do DAS"), WEB)
+        ao_vivo.assert_called_once()
+
+
+class PdfNovoNoSite(Base):
+    def test_url_alternativa_e_corpo_para_a_base_web(self):
+        respostas = {"https://www8.receita.fazenda.gov.br/a.pdf": (None, None, None),
+                     "https://www8.receita.fazenda.gov.br/b.pdf": (200, pdf_falso(3, "edicao 2026"), {})}
+        fonte = dict(self.fonte, url="https://www8.receita.fazenda.gov.br/a.pdf",
+                     urls_alternativas=["https://www8.receita.fazenda.gov.br/b.pdf"])
+        with mock.patch.object(A.V, "baixar", side_effect=lambda url, *a, **k: respostas[url]):
+            r = A.processar(fonte, {}, simular=True, guardar_corpo=True)
+        self.assertEqual(r["status"], "novo")
+        self.assertEqual(r["url"], "https://www8.receita.fazenda.gov.br/b.pdf")
+        self.assertTrue(r["corpo"].startswith(b"%PDF"))
+        self.assertFalse((Path(self.tmp.name) / "5-Teste_MEI.pdf").exists())    # simulação: nada gravado
+
+
+class Velocidade(unittest.TestCase):
+    """Resposta aparece antes da conferência; versão corrigida substitui a do PDF."""
+
+    @classmethod
+    def setUpClass(cls):
+        import rag
+        cls.rag = rag
+
+    def _cliente(self, texto, chamadas, falhar_modelo=None):
+        def criar(**k):
+            chamadas.append(k)
+            if falhar_modelo and k["model"] == falhar_modelo:
+                erro = RuntimeError(f"The model `{falhar_modelo}` has been decommissioned")
+                erro.status_code = 400
+                raise erro
+            if k.get("stream"):
+                return iter([types.SimpleNamespace(choices=[types.SimpleNamespace(
+                    delta=types.SimpleNamespace(content=texto))])])
+            return Resposta("consulta reescrita sobre o DAS do MEI")
+        return types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=criar)))
+
+    def setUp(self):
+        self.rag._cache.clear()
+        self.trechos = [{"fonte": "4-Perguntas&Respostas3_MEI.pdf", "pagina": 7, "texto": "O DAS custa R$ 67,00."}]
+        self.indice = types.SimpleNamespace(buscar_varias=lambda consultas, k=8: list(self.trechos))
+        p = mock.patch.object(self.rag, "trechos_da_web", return_value=[])
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_texto_sai_antes_da_conferencia_e_e_substituido(self):
+        ordem = []
+        nova = {"status": "atualizada", "resposta": "Segundo o site do Sebrae, o DAS custa **R$ 82,05**.",
+                "divergencias": [{"tema": "DAS", "pdf": "R$ 67,00", "site": "R$ 82,05"}], "fontes_web": [], "data": "23/11/2026"}
+
+        def verificar(*a, **k):
+            ordem.append("verificar")
+            self.assertIsNotNone(k.get("trechos_web"))          # coleta já feita em paralelo
+            return dict(nova)
+        with mock.patch.object(self.rag.verificador, "ATIVO", True), \
+             mock.patch.object(self.rag, "CONFERENCIA_MODO", "depois"), \
+             mock.patch.object(self.rag.verificador, "coletar_trechos", return_value=WEB), \
+             mock.patch.object(self.rag.verificador, "verificar", side_effect=verificar):
+            for tipo, dado in self.rag.responder_stream(self.indice, self._cliente("O DAS custa R$ 67,00 [1].", []),
+                                                         "Quanto custa o DAS do MEI?", []):
+                ordem.append(tipo)
+                if tipo == "fim":
+                    fim = dado
+        self.assertLess(ordem.index("texto"), ordem.index("verificar"))   # a pessoa já lê antes de conferir
+        self.assertIn("status", ordem)
+        self.assertTrue(fim["substituida"])
+        self.assertIn("82,05", fim["resposta"])
+        self.assertNotIn("resposta", fim["verificacao"])
+
+    def test_modo_antes_continua_funcionando(self):
+        with mock.patch.object(self.rag.verificador, "ATIVO", True), \
+             mock.patch.object(self.rag, "CONFERENCIA_MODO", "antes"), \
+             mock.patch.object(self.rag.verificador, "coletar_trechos", return_value=WEB), \
+             mock.patch.object(self.rag.verificador, "verificar",
+                               return_value={"status": "confirmado", "fontes_web": [], "divergencias": []}):
+            cli = self._cliente("", [])
+            cli.chat.completions.create = lambda **k: (Resposta("O DAS custa R$ 67,00 [1].") if k.get("messages", [{}])[0].get("content", "").startswith("Você é")
+                                                       else Resposta("consulta"))
+            eventos = list(self.rag.responder_stream(self.indice, cli, "Quanto custa o DAS?", []))
+        self.assertEqual(eventos[0], ("status", "Consultando os documentos…"))
+        self.assertEqual(eventos[-1][1]["verificacao"]["status"], "confirmado")
+        self.assertFalse(eventos[-1][1]["substituida"])
+
+    def test_reescrita_usa_modelo_rapido_e_cai_para_o_principal(self):
+        chamadas = []
+        with mock.patch.object(self.rag.verificador, "ATIVO", False), \
+             mock.patch.object(self.rag, "_modelo_reescrita", "modelo-rapido"):
+            list(self.rag.responder_stream(self.indice, self._cliente("ok [1].", chamadas, falhar_modelo="modelo-rapido"),
+                                           "Quanto custa o DAS?", []))
+            self.assertEqual(self.rag._modelo_reescrita, self.rag.MODELO_LLM)      # lembra a troca
+        modelos = [c["model"] for c in chamadas]
+        self.assertEqual(modelos, ["modelo-rapido", self.rag.MODELO_LLM, self.rag.MODELO_LLM])
+
+    def test_paginas_oficiais_entram_como_fonte(self):
+        web = [{"fonte": "web", "pagina": 0, "url": "https://www.gov.br/receitafederal/pt-br/x", "titulo": "DAS 2026",
+                "site": "Receita Federal", "data": "02/02/2026", "tipo": "pagina", "texto": "O DAS de 2026 é R$ 82,05."}]
+        chamadas = []
+        with mock.patch.object(self.rag.verificador, "ATIVO", False), \
+             mock.patch.object(self.rag, "trechos_da_web", return_value=web):
+            fim = list(self.rag.responder_stream(self.indice, self._cliente("Valor novo [2], antigo [1].", chamadas),
+                                                 "Quanto custa o DAS?", []))[-1][1]
+        self.assertEqual(fim["paginas_oficiais"][0]["url"], "https://www.gov.br/receitafederal/pt-br/x")
+        self.assertEqual(fim["fontes"][0]["arquivo"], "4-Perguntas&Respostas3_MEI.pdf")
+        self.assertIn("página oficial — site Receita Federal: DAS 2026, publicada/atualizada em 02/02/2026",
+                      chamadas[-1]["messages"][-1]["content"])
+
+
 if __name__ == "__main__":
     unittest.main()

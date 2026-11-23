@@ -1,15 +1,24 @@
-# Atualiza semanalmente os PDFs da base com as versões mais recentes do Sebrae e da Receita Federal.
-# Se algum PDF mudou, abre um Pull Request. Ao aprovar (merge), o Render faz o deploy e refaz o
-# índice de busca sozinho (preparar_base.py no build). Também dá para rodar na mão:
-#   aba Actions > "Atualizar base de PDFs" > Run workflow.
+# Mantém a base do FiscOn atualizada todos os dias:
+#   1. baixa as versões mais novas dos PDFs (Sebrae e Receita Federal) -> atualizar_base.py
+#   2. se algum PDF mudou: abre um Pull Request (padrão) OU publica direto no ramo principal
+#      (se a variável PUBLICAR_DIRETO = true). Ao entrar no ramo principal, o Render refaz o deploy.
+#   3. (opcional) pede ao Render um novo deploy mesmo sem mudança no GitHub (secret RENDER_DEPLOY_HOOK):
+#      o build (preparar_base.py) baixa os PDFs mais novos, refaz o índice e coleta os sites oficiais.
+#   4. (opcional) pede ao servidor uma coleta dos sites agora (secrets FISCON_URL + BASE_WEB_TOKEN).
+# Também dá para rodar na mão: aba Actions > "Atualizar base de PDFs" > Run workflow.
 #
-# Requisito (uma vez): Settings > Actions > General > Workflow permissions >
-#   "Read and write permissions" + marcar "Allow GitHub Actions to create and approve pull requests".
+# Requisitos (uma vez):
+#   - Settings > Actions > General > Workflow permissions > "Read and write permissions"
+#     + "Allow GitHub Actions to create and approve pull requests".
+#   - Opcional: Settings > Secrets and variables > Actions
+#       Variables: PUBLICAR_DIRETO = true  (publica sem revisão)
+#       Secrets:   RENDER_DEPLOY_HOOK (Render > serviço > Settings > Deploy Hook)
+#                  FISCON_URL (ex.: https://chatbot-mei.onrender.com) e BASE_WEB_TOKEN (mesmo valor do Render)
 name: Atualizar base de PDFs
 
 on:
   schedule:
-    - cron: "17 9 * * 1"      # toda segunda, 06:17 no horário de Brasília (09:17 UTC)
+    - cron: "17 9 * * *"      # todo dia, 06:17 no horário de Brasília (09:17 UTC)
   workflow_dispatch:
 
 permissions:
@@ -19,6 +28,10 @@ permissions:
 jobs:
   atualizar:
     runs-on: ubuntu-latest
+    env:   # no nível do job para poderem ser testados nos "if" dos passos opcionais
+      HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+      URL: ${{ secrets.FISCON_URL }}
+      TOKEN: ${{ secrets.BASE_WEB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +47,7 @@ jobs:
         run: python atualizar_base.py
 
       - name: Abrir Pull Request com a base atualizada
-        if: steps.atualizar.outputs.mudou == 'true'
+        if: steps.atualizar.outputs.mudou == 'true' && vars.PUBLICAR_DIRETO != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -49,4 +62,23 @@ jobs:
           gh pr create --base "${{ github.event.repository.default_branch }}" --head "$ramo" \
             --title "Atualiza PDFs da base ($(date +%d/%m/%Y))" \
             --body-file relatorio_atualizacao.md
-          # Quer publicar sem revisar? Troque o bloco acima por "git push origin HEAD:main".
+
+      - name: Publicar direto no ramo principal
+        if: steps.atualizar.outputs.mudou == 'true' && vars.PUBLICAR_DIRETO == 'true'
+        run: |
+          set -e
+          git config user.name  "fiscon-atualizador"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A -- '*.pdf' base_status.json
+          git commit -m "Atualiza PDFs da base (Sebrae e Receita Federal)"
+          git push origin HEAD:${{ github.event.repository.default_branch }}
+
+      - name: Pedir novo deploy ao Render (opcional)
+        if: env.HOOK != ''
+        run: curl -fsS -X POST "$HOOK" > /dev/null && echo "Deploy solicitado ao Render."
+
+      - name: Pedir coleta dos sites oficiais ao servidor (opcional)
+        if: env.URL != '' && env.TOKEN != ''
+        run: |
+          curl -fsS --max-time 120 "$URL/api/status" > /dev/null || true   # acorda o servidor gratuito
+          curl -fsS -X POST -H "X-Token: $TOKEN" "$URL/api/base-web/atualizar" || echo "Servidor não respondeu (tudo bem: ele coleta sozinho a cada 12 h)."

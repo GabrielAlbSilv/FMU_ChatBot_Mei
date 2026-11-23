@@ -187,5 +187,44 @@
         "https://www.gov.br/receitafederal/pt-br/canais_atendimento/fale-conosco/empresa/suporte-a-dirf"
       ]
     }
+  ],
+  "_aviso_rastrear": "'rastrear': páginas de partida que o base_web.py visita periodicamente (BASE_WEB_HORAS). De cada uma, segue os links cujo endereço combina com 'seguir' (expressão regular), até 'max' links. Só endereços do Sebrae e da Receita Federal são aceitos; o resto é ignorado.",
+  "rastrear": [
+    {
+      "nome": "Notícias do Portal do Simples Nacional (inclui MEI)",
+      "inicio": "https://www8.receita.fazenda.gov.br/SimplesNacional/",
+      "seguir": "NoticiaCompleta\\.aspx",
+      "max": 12
+    },
+    {
+      "nome": "Notícias da Receita Federal sobre MEI, Simples, IR, CPF e CNPJ",
+      "inicio": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias",
+      "seguir": "/receitafederal/pt-br/assuntos/noticias/20\\d\\d/.*(mei|simples|simei|imposto-de-renda|irpf|restituic|cpf|cnpj|declarac|malha|empreend)",
+      "max": 15
+    },
+    {
+      "nome": "Meu Imposto de Renda (Receita Federal)",
+      "inicio": "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda",
+      "seguir": "/receitafederal/pt-br/assuntos/meu-imposto-de-renda/",
+      "max": 12
+    },
+    {
+      "nome": "Perguntas frequentes da Receita Federal",
+      "inicio": "https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/perguntas-frequentes",
+      "seguir": "/receitafederal/pt-br/acesso-a-informacao/perguntas-frequentes/.*(imposto-de-renda|dirpf|cpf|cnpj|simples|mei)",
+      "max": 10
+    },
+    {
+      "nome": "Guia do MEI (Sebrae)",
+      "inicio": "https://sebrae.com.br/subsites/mei",
+      "seguir": "sebrae\\.com\\.br/.*(mei|guiaparaomei|microempreendedor)",
+      "max": 10
+    },
+    {
+      "nome": "Blog do Sebrae RN — guia do MEI",
+      "inicio": "https://blog.rn.sebrae.com.br/guia-mei/",
+      "seguir": "blog\\.rn\\.sebrae\\.com\\.br/.*(mei|simples|imposto|das-|dasn|cnpj)",
+      "max": 10
+    }
   ]
 }

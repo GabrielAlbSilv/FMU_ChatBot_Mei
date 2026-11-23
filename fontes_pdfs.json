@@ -6,9 +6,12 @@
       "arquivo": "4-Perguntas&Respostas3_MEI.pdf",
       "titulo": "Perguntas e Respostas MEI e Simei (Receita Federal / Comitê Gestor do Simples Nacional)",
       "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/pergunta-resposta/PerguntaoMEI.pdf",
-      "obs": "EXCEÇÃO ao filtro de 2026 (ano_minimo=0): é o PDF mais geral sobre MEI e a edição online mais recente é de 29/04/2025. Quando a Receita publicar a de 2026, ela substitui esta sozinha. A conferência ao vivo com os sites cobre eventuais mudanças.",
+      "obs": "EXCEÇÃO ao filtro de 2026 (ano_minimo=0): é o PDF mais geral sobre MEI e a edição online mais recente é de 29/04/2025. Quando a Receita publicar a de 2026, ela substitui esta sozinha. A conferência ao vivo com os sites cobre eventuais mudanças. | 23/11/2026: o arquivo local é a edição de abr/2023; a edição online é de 29/04/2025 e entra no próximo atualizar_base.py. O Comitê Gestor também publica o mesmo PDF em /Arquivos/manual/ (urls_alternativas).",
       "ativo": true,
-      "ano_minimo": 0
+      "ano_minimo": 0,
+      "urls_alternativas": [
+        "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoMEI.pdf"
+      ]
     },
     {
       "arquivo": "5-Impostos_PF_MEI.pdf",
@@ -29,8 +32,8 @@
       "arquivo": "8-Exclusao_SimplesNacional_2026.pdf",
       "titulo": "Exclusão do Simples Nacional 2026 — Perguntas e Respostas (inclui MEI)",
       "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/marco/receita-federal-emite-termo-de-exclusao-para-devedores-do-simples-nacional-incluindo-mei/perguntas-e-respostas-contribuinte-2026.pdf",
-      "ativo": false,
-      "obs": "Desligado em 23/11/2026: fora da seleção dos PDFs mais gerais. Mude 'ativo' para true para voltar a vigiar."
+      "ativo": true,
+      "obs": "Reativado em 23/11/2026: PDF de 2026 da Receita Federal sobre exclusão do Simples Nacional por débitos, com perguntas específicas sobre o MEI."
     },
     {
       "arquivo": "9-Perguntas&Respostas_PessoaJuridica_2026.pdf",
@@ -81,6 +84,20 @@
       "titulo": "Guia rápido: regularidade do MEI e direitos previdenciários (Sebrae)",
       "url": "https://sebrae.com.br/content/dam/portal-sebrae/na/midias/documentos/pdfs/ebook_direitos-previdenciarios-mei-beneficios-inss.pdf",
       "obs": "Material recente do Sebrae sobre MEI; o ano é checado pelo filtro ao baixar (se for anterior a 2026, fica como 'antigo'). | Desligado em 23/11/2026: fora da seleção dos PDFs mais gerais. Mude 'ativo' para true para voltar a vigiar.",
+      "ativo": false
+    },
+    {
+      "arquivo": "15-Roteiro_Opcao_SimplesNacional_2027.pdf",
+      "titulo": "Roteiro da Opção pelo Simples Nacional para 2027 (Comitê Gestor, publicado em ago/2026)",
+      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/Roteiro%20da%20op%C3%A7%C3%A3o%20pelo%20Simles%20Nacional%20para%20o%20ano%20de%202027.pdf",
+      "obs": "Novo em 23/11/2026. Explica a opção pelo Simples Nacional/Simei para 2027 (prazo em setembro de 2026) e o desenquadramento do MEI ao ser excluído do Simples.",
+      "ativo": true
+    },
+    {
+      "arquivo": "16-Manual_Opcao_IBS_CBS_SimplesNacional.pdf",
+      "titulo": "Manual da Opção pelo Regime Regular do IBS e da CBS no Simples Nacional (set/2026)",
+      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/Manual%20op%C3%A7%C3%A3o%20regime%20regular%20IBS%20e%20CBS%20no%20Simples%20Nacional.pdf",
+      "obs": "Encontrado em 23/11/2026 (publicado em 01/09/2026). Desligado: trata da Reforma Tributária para empresas do Simples, pouco do MEI. Mude 'ativo' para true se quiser.",
       "ativo": false
     }
   ]

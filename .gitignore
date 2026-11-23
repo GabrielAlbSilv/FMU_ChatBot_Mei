@@ -16,6 +16,8 @@ ENV/
 
 # Índice de busca (gerado por preparar_base.py no build)
 indice/
+# Cópia local dos sites oficiais (gerada pelo base_web.py no build e no servidor)
+indice_web/
 
 # Cache do modelo de embeddings (baixado no build)
 modelo_cache/
