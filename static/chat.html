@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Aplica o tema escolhido antes de desenhar a página (evita piscar) -->
   <script>try{var t=localStorage.getItem("chatbot-mei-tema");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
-  <link rel="stylesheet" href="style.css?v=11">
+  <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body class="pagina-chat">
 
@@ -44,13 +44,13 @@
   </div>
 
   <main class="app">
-    <header class="topo">
+    <header id="topo" class="topo">
       <a class="voltar" href="/" aria-label="Voltar para a página inicial" title="Página inicial">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </a>
       <img class="avatar" src="icon.svg" alt="">
       <div class="topo-info">
-        <h1>FiscOn: MEI e Receita Federal</h1>
+        <h1 title="FiscOn: MEI e Receita Federal">FiscOn<span class="topo-sub">MEI e Receita Federal</span></h1>
         <span id="status" class="pilula-status">Preparando…</span>
       </div>
       <div class="topo-acoes">
@@ -94,7 +94,7 @@
         </button>
       </form>
       <span id="contador" class="contador" aria-live="polite" hidden></span>
-      <p class="aviso">Respostas geradas por IA com base em documentos. Podem conter erros: confirme no Portal do Empreendedor e no Site da Receita Federal. <span id="base-data"></span></p>
+      <p id="aviso" class="aviso" title="Toque para ler o aviso completo">Respostas geradas por IA com base em documentos. Podem conter erros: confirme no Portal do Empreendedor e no Site da Receita Federal. <span id="base-data"></span></p>
     </div>
   </main>
 
@@ -113,7 +113,7 @@
     </form>
   </dialog>
 
-  <script src="tema.js?v=11"></script>
-  <script src="script.js?v=11"></script>
+  <script src="tema.js?v=12"></script>
+  <script src="script.js?v=12"></script>
 </body>
 </html>

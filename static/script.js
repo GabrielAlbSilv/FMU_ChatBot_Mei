@@ -354,7 +354,7 @@ function htmlFontes(fontes, paginasOficiais) {
   }
   if (!chips.length) return "";
   const extras = chips.length > MAX_FONTES ? `<span class="fonte fonte-mais">+${chips.length - MAX_FONTES}</span>` : "";
-  return `<div class="fontes"><span class="fontes-titulo">${ICONE_LIVRO}Fontes consultadas (clique para abrir)</span>` +
+  return `<div class="fontes"><span class="fontes-titulo" title="Clique em uma fonte para abrir o documento ou a página">${ICONE_LIVRO}Fontes</span>` +
     chips.slice(0, MAX_FONTES).join("") + extras + "</div>";
 }
 
@@ -428,18 +428,38 @@ const NAF_EMAIL = "naf@fmu.br";
 const NAF_FORMULARIO = "https://forms.cloud.microsoft/r/qweuKC6AxF";   // o mesmo link do QR Code
 const NAF_QR = "Qr_Code_NAF.jpg";
 
+// Cartão compacto do NAF: e-mail e formulário sempre visíveis; o QR Code aparece ao lado no
+// computador (para escanear com o celular) e, no celular, só quando a pessoa toca em "QR Code".
+const ICONE_QR = svg('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>');
+
 function htmlContatoNaf() {
   return '<div class="contato-naf">' +
-    `<a class="naf-qr" href="${NAF_FORMULARIO}" target="_blank" rel="noopener" title="Abrir o formulário de agendamento">` +
-      `<img src="${NAF_QR}" alt="QR Code do formulário de agendamento do NAF" width="96" height="96" loading="lazy">` +
-    '</a>' +
+    `<span class="naf-icone">${ICONE_FONE}</span>` +
     '<div class="naf-texto">' +
-      `<strong><span class="naf-icone">${ICONE_FONE}</span>Para agendamento presencial ou online, entre em contato com o NAF - Núcleo de Apoio Fiscal</strong>` +
-      `<span class="naf-linha">${ICONE_EMAIL}E-mail: <a href="mailto:${NAF_EMAIL}">${NAF_EMAIL}</a></span>` +
-      `<span class="naf-linha">${ICONE_CALENDARIO}<a href="${NAF_FORMULARIO}" target="_blank" rel="noopener">Formulário agendamento</a></span>` +
-      '<small>Ou aponte a câmera do celular para o QR Code.</small>' +
+      '<strong>Para agendamento presencial ou online, entre em contato com o NAF - Núcleo de Apoio Fiscal</strong>' +
+      '<div class="naf-links">' +
+        `<a class="naf-link" href="mailto:${NAF_EMAIL}">${ICONE_EMAIL}<span>${NAF_EMAIL}</span></a>` +
+        `<a class="naf-link" href="${NAF_FORMULARIO}" target="_blank" rel="noopener">${ICONE_CALENDARIO}<span>Formulário agendamento</span></a>` +
+        `<button type="button" class="naf-link naf-mostrar-qr" aria-expanded="false">${ICONE_QR}<span>QR Code</span></button>` +
+      '</div>' +
+    '</div>' +
+    '<div class="naf-qr-area">' +
+      `<a class="naf-qr" href="${NAF_FORMULARIO}" target="_blank" rel="noopener" title="Abrir o formulário de agendamento">` +
+        `<img src="${NAF_QR}" alt="QR Code do formulário de agendamento do NAF" width="96" height="96" loading="lazy">` +
+      '</a>' +
+      '<small>Aponte a câmera do celular para o QR Code.</small>' +
     '</div></div>';
 }
+
+// "QR Code" no celular: abre/fecha o código dentro do cartão do NAF
+areaMensagens.addEventListener("click", (e) => {
+  const botaoQr = e.target.closest(".naf-mostrar-qr");
+  if (!botaoQr) return;
+  const cartao = botaoQr.closest(".contato-naf");
+  const aberto = cartao.classList.toggle("qr-aberto");
+  botaoQr.setAttribute("aria-expanded", String(aberto));
+  if (aberto) acompanharRolagem();
+});
 
 function rolarParaBaixo(suave = true) {
   requestAnimationFrame(() => {
@@ -498,18 +518,21 @@ function mostrarErro(texto, pergunta, msgUsuario) {
 
 // Preenche uma mensagem do bot já concluída: texto, fontes, atalhos e botão copiar.
 // "surgir" = fontes, atalhos e botão copiar aparecem com um leve fade, um após o outro.
+// Resposta organizada: o texto fica no balão; abaixo dele, um painel com a conferência,
+// as fontes, os atalhos oficiais e o contato do NAF — cada coisa no seu lugar.
 function finalizarBot(partes, dados, surgir = false) {
-  partes.balao.innerHTML = markdownSimples(dados.texto) + htmlFontes(dados.fontes, dados.paginas_oficiais) + htmlVerificacao(dados.verificacao) + htmlAcoes(dados.acoes) + htmlContatoNaf();
+  partes.balao.innerHTML = markdownSimples(dados.texto);
   removerIndicadorConferencia(partes);
+  const antigo = partes.corpo.querySelector(".anexos");
+  if (antigo) antigo.remove();
+  const anexos = document.createElement("div");
+  anexos.className = "anexos";
+  anexos.innerHTML = htmlVerificacao(dados.verificacao) + htmlFontes(dados.fontes, dados.paginas_oficiais) +
+    htmlAcoes(dados.acoes) + htmlContatoNaf();
+  partes.corpo.appendChild(anexos);
+
   const ferramentas = document.createElement("div");
   ferramentas.className = "msg-ferramentas";
-  if (surgir) {
-    [...partes.balao.querySelectorAll(".fontes, .verificacao, .acoes-portal, .contato-naf"), ferramentas].forEach((el, i) => {
-      el.classList.add("surgir");
-      el.style.animationDelay = `${i * 120}ms`;
-    });
-    rolarParaBaixo();
-  }
   const copiar = document.createElement("button");
   copiar.type = "button";
   copiar.className = "botao-ferramenta";
@@ -518,6 +541,14 @@ function finalizarBot(partes, dados, surgir = false) {
   copiar.addEventListener("click", () => copiarTexto(dados.texto, copiar));
   ferramentas.appendChild(copiar);
   partes.corpo.appendChild(ferramentas);
+
+  if (surgir) {
+    [...anexos.children, ferramentas].forEach((el, i) => {
+      el.classList.add("surgir");
+      el.style.animationDelay = `${i * 90}ms`;
+    });
+    rolarParaBaixo();
+  }
 }
 
 function mostrarBot(dados) {
@@ -891,6 +922,16 @@ if (botaoFim) {
   areaMensagens.addEventListener("scroll", atualizarBotaoFim, { passive: true });
   botaoFim.addEventListener("click", () => rolarParaBaixo());
 }
+
+/* ---------- Cabeçalho ganha sombra quando a conversa rola por baixo dele ---------- */
+const topoEl = document.getElementById("topo");
+if (topoEl) {
+  areaMensagens.addEventListener("scroll", () => topoEl.classList.toggle("rolou", areaMensagens.scrollTop > 4), { passive: true });
+}
+
+/* ---------- Aviso do rodapé: no celular fica em 1 linha; toque para ler tudo ---------- */
+const avisoEl = document.getElementById("aviso");
+if (avisoEl) avisoEl.addEventListener("click", () => avisoEl.classList.toggle("aberto"));
 
 /* ---------- Confirmação antes de começar uma nova conversa ---------- */
 const dialogoNova = document.getElementById("dialogo-nova");

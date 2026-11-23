@@ -12,15 +12,15 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Aplica o tema escolhido antes de desenhar a página (evita piscar) -->
   <script>try{var t=localStorage.getItem("chatbot-mei-tema");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
-  <link rel="stylesheet" href="style.css?v=11">
+  <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 
-  <header class="cabecalho">
+  <header id="cabecalho" class="cabecalho">
     <div class="container">
       <a class="marca" href="/" aria-label="FiscOn: Chatbot MEI e Receita Federal — início">
         <img src="icon.svg" alt="">
-        <span>FiscOn: Chatbot MEI e Receita Federal</span>
+        <span>FiscOn<span class="marca-sub">: Chatbot MEI e Receita Federal</span></span>
       </a>
       <nav aria-label="Principal">
         <a class="link" href="#sobre">Sobre o MEI e a Receita</a>
@@ -293,6 +293,45 @@
       checar();
     })();
   </script>
-  <script src="tema.js?v=11"></script>
+  <script>
+    // Página mais fluida: cabeçalho com sombra ao rolar, link do menu da seção visível
+    // e elementos que surgem suavemente ao entrar na tela (desligado para "reduzir movimento").
+    (function () {
+      const cab = document.getElementById("cabecalho");
+      const aoRolar = () => cab.classList.toggle("rolou", window.scrollY > 8);
+      window.addEventListener("scroll", aoRolar, { passive: true });
+      aoRolar();
+
+      if (!("IntersectionObserver" in window)) return;
+      const links = [...document.querySelectorAll('.cabecalho nav a.link[href^="#"]')];
+      const espiao = new IntersectionObserver((entradas) => {
+        entradas.forEach((e) => {
+          if (!e.isIntersecting) return;
+          links.forEach((l) => l.classList.toggle("ativo", l.getAttribute("href") === "#" + e.target.id));
+        });
+      }, { rootMargin: "-45% 0px -50% 0px" });
+      links.forEach((l) => { const alvo = document.querySelector(l.getAttribute("href")); if (alvo) espiao.observe(alvo); });
+
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const alvos = document.querySelectorAll(".secao-titulo, .explicacao > div, .destaque, .cartao, .passo, .documentos li, .cta-final");
+      const revelar = new IntersectionObserver((entradas) => {
+        entradas.forEach((e) => {
+          if (!e.isIntersecting) return;
+          const el = e.target;
+          el.classList.add("visivel");
+          revelar.unobserve(el);
+          // terminada a entrada, devolve as transições normais (hover dos cartões etc.)
+          setTimeout(() => el.classList.remove("revelar", "visivel"), 700 + (parseInt(el.style.getPropertyValue("--atraso"), 10) || 0));
+        });
+      }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+      alvos.forEach((el) => {
+        const irmaos = [...el.parentElement.children];
+        el.style.setProperty("--atraso", `${Math.min(irmaos.indexOf(el), 6) * 70}ms`);
+        el.classList.add("revelar");
+        revelar.observe(el);
+      });
+    })();
+  </script>
+  <script src="tema.js?v=12"></script>
 </body>
 </html>
