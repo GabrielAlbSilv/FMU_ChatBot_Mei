@@ -123,7 +123,18 @@ class Fluxo(unittest.TestCase):
 
     def test_sem_paginas_ou_json_invalido(self):
         self.assertEqual(self.rodar("{}", trechos=[])["status"], "indisponivel")
-        self.assertEqual(self.rodar("não é json")["status"], "inconclusivo")
+        r = self.rodar("não é json")                      # JSON inválido NÃO pode virar "inconclusivo"
+        self.assertEqual(r["status"], "indisponivel")
+        self.assertEqual(r["consultadas"], 1)
+
+    def test_json_invalido_na_1a_tentativa_e_valido_na_2a(self):
+        respostas = iter(["Claro! Aqui vai: ```", json.dumps({"veredito": "confirmado", "motivo": "o site traz R$ 82,05"})])
+        c = types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(
+            create=lambda **k: Resposta(next(respostas)))))
+        with mock.patch.object(v, "coletar_trechos", return_value=WEB):
+            r = v.verificar(c, "m", {}, "p", "c", "r", PDFS)
+        self.assertEqual(r["status"], "confirmado")
+        self.assertEqual(r["motivo"], "o site traz R$ 82,05")
 
     def test_erro_do_llm_mantem_resposta_dos_pdfs(self):
         def erro(**k):

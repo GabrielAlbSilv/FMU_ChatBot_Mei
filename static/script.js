@@ -305,10 +305,16 @@ function htmlVerificacao(v) {
     }
   } else if (v.status === "inconclusivo") {
     classe = "neutra";
-    texto = "Não encontrei no Sebrae nem na Receita Federal uma informação que confirme ou corrija esta resposta; ela se baseia nos documentos (PDFs).";
+    const n = Number(v.consultadas) || 0;
+    texto = `Li ${n || "algumas"} página(s) do Sebrae e da Receita Federal, mas nenhuma trata diretamente deste ponto; a resposta se baseia nos documentos (PDFs).`;
+    if (v.motivo) extra = `<p class="verif-motivo">${escapar(v.motivo)}</p>`;
   } else {
     classe = "neutra";
-    texto = "Não consegui consultar os sites do Sebrae e da Receita Federal agora. A resposta se baseia nos documentos (PDFs) e pode estar desatualizada.";
+    const leu = Number(v.consultadas) > 0;
+    texto = leu
+      ? "Consegui abrir páginas do Sebrae e da Receita Federal, mas a conferência não terminou. A resposta se baseia nos documentos (PDFs) e pode estar desatualizada."
+      : "Não consegui ler os sites do Sebrae e da Receita Federal agora. A resposta se baseia nos documentos (PDFs) e pode estar desatualizada.";
+    if (v.motivo) extra = `<p class="verif-motivo">${escapar(v.motivo)}</p>`;
   }
   return `<div class="verificacao ${classe}"><p>${texto}</p>${extra}${links ? `<div class="fontes-web">${links}</div>` : ""}</div>`;
 }

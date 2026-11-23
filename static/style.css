@@ -366,6 +366,7 @@ a.fonte:hover { border-color: var(--vermelho); color: var(--vermelho); }
 .verificacao.ok p strong { color: var(--ok); }
 .verificacao.atualizada { border-color: var(--vermelho-borda); background: var(--vermelho-claro); }
 .verificacao.neutra p { color: var(--suave); }
+.verif-motivo { margin: 6px 0 0 !important; font-size: 12px; color: var(--suave); }
 .verif-detalhes { margin-top: 6px; }
 .verif-detalhes summary { cursor: pointer; font-weight: 600; color: var(--vermelho); }
 .verif-detalhes ul { margin: 6px 0 0; padding-left: 18px; }
