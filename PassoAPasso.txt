@@ -41,3 +41,7 @@
 	  General: "Read and write permissions" e "Allow GitHub Actions to create and approve pull requests".)
 	- O índice local também se refaz sozinho se algum PDF mudar (assinatura dos arquivos).
 	- Testes offline: python teste_verificador.py  e  python teste_atualizar_base.py
+	- Só entram PDFs de 2026 em diante (ano_minimo em fontes_pdfs.json). python atualizar_base.py --auditar mostra
+	  o ano de cada PDF; --arquivar-antigos move os anteriores a 2026 para pdfs_arquivados/ (não são apagados).
+	- IMPORTANTE: rode  python atualizar_base.py  (ou o workflow) ANTES de publicar: sem isso a base fica só com
+	  os PDFs de 2026 que já estão na pasta.

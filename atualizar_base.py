@@ -4,11 +4,16 @@ Uso:
     python atualizar_base.py              # baixa o que mudou e substitui os PDFs
     python atualizar_base.py --simular    # só mostra o que mudaria (não grava nada)
     python atualizar_base.py --reindexar  # depois de atualizar, refaz o índice de busca (uso local)
+    python atualizar_base.py --auditar    # mostra o ano de cada PDF da base e aponta os anteriores a 2026
+    python atualizar_base.py --arquivar-antigos   # move os PDFs anteriores a 2026 para pdfs_arquivados/
 
 Como funciona:
   - fontes_pdfs.json diz, para cada PDF da base, de onde baixar a versão atual.
   - Só endereços do Sebrae e da Receita Federal são aceitos (verificador.url_permitida), inclusive
     nos redirecionamentos.
+  - Só entram PDFs de 2026 em diante ("ano_minimo" em fontes_pdfs.json): o ano vem dos metadados do
+    PDF e das primeiras páginas (capa/edição). Edições antigas são recusadas ("antigo"), e passam a
+    ser aceitas sozinhas quando a fonte publicar a edição nova.
   - Cada arquivo baixado é validado (é PDF? abre? tem texto? não encolheu demais?) antes de
     substituir o anterior; se algo estranho acontecer, o PDF antigo é mantido.
   - base_status.json guarda data, hash e ETag de cada PDF (evita baixar de novo o que não mudou).
@@ -40,6 +45,8 @@ MAX_BYTES = 60_000_000        # maior PDF aceito
 MIN_BYTES = 10_000            # menor que isso não é uma publicação de verdade
 TIMEOUT_DOWNLOAD = 90         # segundos
 FRACAO_MINIMA_PAGINAS = 0.5   # PDF novo com menos da metade das páginas do atual é suspeito
+ANO_MINIMO_PADRAO = 2026
+PASTA_ARQUIVADOS = RAIZ / "pdfs_arquivados"      # PDFs antigos guardados fora do índice (não são apagados)
 NOME_VALIDO = re.compile(r"^\d+-[\w&.-]+\.pdf$", re.IGNORECASE)   # mesmo padrão do rag.py/app.py
 
 
@@ -75,6 +82,32 @@ def validar_pdf(corpo):
     return True, paginas, ""
 
 
+def ano_do_pdf(corpo):
+    """Ano de referência do PDF: o maior entre os metadados (criação/modificação) e a capa
+    (primeiras 3 páginas, onde costa a edição). Devolve (ano|None, de_onde)."""
+    from pypdf import PdfReader
+
+    leitor = PdfReader(io.BytesIO(corpo))
+    anos = []
+    try:
+        meta = leitor.metadata or {}
+        for chave in ("/ModDate", "/CreationDate"):
+            m = re.search(r"(?:D:)?(20[0-3]\d)", str(meta.get(chave) or ""))
+            if m:
+                anos.append((int(m.group(1)), "metadados"))
+    except Exception:  # noqa: BLE001
+        pass
+    capa = ""
+    for i in range(min(len(leitor.pages), 3)):
+        try:
+            capa += " " + (leitor.pages[i].extract_text() or "")
+        except Exception:  # noqa: BLE001
+            continue
+    for a in re.findall(r"\b(20[0-3]\d)\b", capa):
+        anos.append((int(a), "capa"))
+    return max(anos) if anos else (None, "sem ano identificável")
+
+
 def paginas_do_arquivo(caminho):
     try:
         from pypdf import PdfReader
@@ -106,7 +139,7 @@ def descobrir_link(pagina_indice, padrao):
 
 
 # ------------------------------------------------------------------------ atualização
-def processar(fonte, estado, simular):
+def processar(fonte, estado, simular, ano_minimo=0):
     """Atualiza UM PDF. Devolve {"arquivo","status","detalhe","url"}; muda `estado` se gravou."""
     nome = fonte.get("arquivo", "")
     res = {"arquivo": nome, "titulo": fonte.get("titulo", nome), "url": fonte.get("url", ""),
@@ -145,6 +178,14 @@ def processar(fonte, estado, simular):
     if not ok:
         return dict(res, detalhe=f"rejeitado: {motivo}")
 
+    minimo = fonte.get("ano_minimo", ano_minimo) or 0
+    if minimo:
+        ano, origem = ano_do_pdf(corpo)
+        if ano is None or ano < minimo:
+            return dict(res, status="antigo",
+                        detalhe=f"edição de {ano or '?'} ({origem}); só entram PDFs de {minimo} em diante. "
+                                "Será aceito sozinho quando a fonte publicar a edição nova.")
+
     hash_novo = sha256(corpo)
     novo_arquivo = not destino.is_file()
     if not novo_arquivo:
@@ -171,6 +212,31 @@ def processar(fonte, estado, simular):
     return res
 
 
+def auditar(ano_minimo, arquivar=False, simular=False):
+    """Lista os PDFs da base com o ano de cada um; opcionalmente move os antigos para pdfs_arquivados/."""
+    import shutil
+
+    antigos = []
+    print(f"Ano mínimo: {ano_minimo}\n")
+    for caminho in sorted(p for p in RAIZ.iterdir() if p.is_file() and NOME_VALIDO.match(p.name)):
+        ano, origem = ano_do_pdf(caminho.read_bytes())
+        velho = ano is None or ano < ano_minimo
+        print(f"{'🕓 ANTIGO ' if velho else '✅ ok     '} {caminho.name}  — {ano or '?'} ({origem})")
+        if velho:
+            antigos.append(caminho)
+    if arquivar and antigos and not simular:
+        PASTA_ARQUIVADOS.mkdir(exist_ok=True)
+        estado = carregar_json(ARQ_ESTADO, {"arquivos": {}})
+        for c in antigos:
+            shutil.move(str(c), PASTA_ARQUIVADOS / c.name)
+            estado.get("arquivos", {}).pop(c.name, None)
+            print(f"→ arquivado: {c.name}")
+        ARQ_ESTADO.write_text(json.dumps(estado, ensure_ascii=False, indent=2), encoding="utf-8")
+    elif antigos:
+        print(f"\n{len(antigos)} PDF(s) anterior(es) a {ano_minimo}. Use --arquivar-antigos para tirá-los da base.")
+    return 0
+
+
 def carregar_json(caminho, padrao):
     try:
         return json.loads(caminho.read_text(encoding="utf-8"))
@@ -179,7 +245,7 @@ def carregar_json(caminho, padrao):
 
 
 def relatorio(resultados, simular):
-    icone = {"novo": "🆕", "atualizado": "🔄", "igual": "✅", "erro": "⚠️", "desligado": "⏸️"}
+    icone = {"novo": "🆕", "atualizado": "🔄", "igual": "✅", "erro": "⚠️", "desligado": "⏸️", "antigo": "🕓"}
     linhas = [f"# Atualização da base de PDFs — {agora().strftime('%d/%m/%Y %H:%M')}"
               + (" (SIMULAÇÃO)" if simular else ""), "",
               "| | Arquivo | Resultado | Fonte |", "|---|---|---|---|"]
@@ -195,16 +261,23 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--simular", action="store_true", help="não grava nada; só mostra o que mudaria")
     ap.add_argument("--reindexar", action="store_true", help="refaz o índice de busca após atualizar (local)")
+    ap.add_argument("--auditar", action="store_true", help="mostra o ano de cada PDF da base")
+    ap.add_argument("--arquivar-antigos", action="store_true",
+                    help="move para pdfs_arquivados/ os PDFs da base anteriores ao ano mínimo")
     ap.add_argument("--estrito", action="store_true", help="sai com código 1 se alguma fonte falhar")
     args = ap.parse_args(argv)
 
-    fontes = carregar_json(ARQ_FONTES, {}).get("fontes", [])
+    manifesto = carregar_json(ARQ_FONTES, {})
+    ano_minimo = int(manifesto.get("ano_minimo", ANO_MINIMO_PADRAO))
+    if args.auditar or args.arquivar_antigos:
+        return auditar(ano_minimo, arquivar=args.arquivar_antigos, simular=args.simular)
+    fontes = manifesto.get("fontes", [])
     if not fontes:
         print("fontes_pdfs.json vazio ou ausente.", file=sys.stderr)
         return 1
     estado = carregar_json(ARQ_ESTADO, {"arquivos": {}})
 
-    resultados = [processar(f, estado, args.simular) for f in fontes]
+    resultados = [processar(f, estado, args.simular, ano_minimo) for f in fontes]
     texto = relatorio(resultados, args.simular)
     print(texto)
     ARQ_RELATORIO.write_text(texto, encoding="utf-8")

@@ -136,6 +136,33 @@ class Atualizacao(Base):
         self.assertEqual(A.processar({**self.fonte, "ativo": False}, {}, False)["status"], "desligado")
 
 
+class FiltroDeAno(Base):
+    def test_edicao_antiga_e_recusada_e_nova_aceita(self):
+        destino = Path(self.tmp.name) / "5-Teste_MEI.pdf"
+        with self.baixar(pdf_falso(3, "edicao 2025")):
+            r = A.processar(self.fonte, {}, False, ano_minimo=2026)
+        self.assertEqual(r["status"], "antigo")
+        self.assertIn("2025", r["detalhe"])
+        self.assertFalse(destino.exists())                      # nada gravado
+        with self.baixar(pdf_falso(3, "edicao 2026")):
+            self.assertEqual(A.processar(self.fonte, {}, False, ano_minimo=2026)["status"], "novo")
+
+    def test_sem_ano_na_capa_e_recusado(self):
+        with self.baixar(pdf_falso(3, "sem data")):
+            self.assertEqual(A.processar(self.fonte, {}, False, ano_minimo=2026)["status"], "antigo")
+
+    def test_auditar_arquiva_sem_apagar(self):
+        raiz = Path(self.tmp.name)
+        (raiz / "1-Velho.pdf").write_bytes(pdf_falso(2, "edicao 2024"))
+        (raiz / "2-Novo.pdf").write_bytes(pdf_falso(2, "edicao 2026"))
+        with mock.patch.object(A, "PASTA_ARQUIVADOS", raiz / "pdfs_arquivados"), \
+             mock.patch.object(A, "ARQ_ESTADO", raiz / "base_status.json"):
+            A.auditar(2026, arquivar=True)
+        self.assertFalse((raiz / "1-Velho.pdf").exists())
+        self.assertTrue((raiz / "pdfs_arquivados" / "1-Velho.pdf").is_file())   # guardado, não apagado
+        self.assertTrue((raiz / "2-Novo.pdf").is_file())
+
+
 class Descoberta(Base):
     def test_escolhe_o_link_mais_novo_e_ignora_fora_da_lista(self):
         html = ('<a href="/receitafederal/pt-br/p/p-r-irpf-2025-v1-00-2025-04-10.pdf/view">a</a>'

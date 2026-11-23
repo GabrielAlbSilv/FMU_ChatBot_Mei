@@ -1,10 +1,12 @@
 {
-  "_aviso": "Lista dos PDFs da base e de onde baixar a versão mais recente. Só endereços do Sebrae e da Receita Federal são aceitos (verificador.url_permitida). 'arquivo' = nome do PDF na raiz do projeto (precisa começar com número, ex.: 4-Nome.pdf); o PDF é SUBSTITUÍDO quando a fonte publica uma versão nova. Se houver 'pagina_indice' + 'padrao', o script procura nessa página o link mais novo que combine com o padrão e usa 'url' como alternativa.",
+  "_aviso": "Lista dos PDFs da base e de onde baixar a versão mais recente. Só Sebrae e Receita Federal são aceitos. 'ano_minimo': só entram PDFs desse ano em diante (o ano vem dos metadados e da capa do PDF); edições antigas ficam como 'antigo' no relatório e são aceitas sozinhas quando a fonte publicar a edição nova. 'arquivo' = nome na raiz do projeto (começa com número, ex.: 4-Nome.pdf); o PDF é SUBSTITUÍDO quando a fonte publica versão nova. Com 'pagina_indice' + 'padrao', o script procura nessa página o link mais novo e usa 'url' como alternativa.",
+  "ano_minimo": 2026,
   "fontes": [
     {
       "arquivo": "4-Perguntas&Respostas3_MEI.pdf",
       "titulo": "Perguntas e Respostas MEI e Simei (Comitê Gestor do Simples Nacional)",
-      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/pergunta-resposta/PerguntaoMEI.pdf"
+      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/pergunta-resposta/PerguntaoMEI.pdf",
+      "obs": "Edição atual online é de 29/04/2025 (anterior a 2026): fica fora até a Receita publicar a edição 2026."
     },
     {
       "arquivo": "5-Impostos_PF_MEI.pdf",
@@ -30,6 +32,30 @@
       "url": "https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/perguntas-e-respostas/ecf/perguntas-e-respostas-da-pessoa-juridica-2026/@@download/file",
       "ativo": false,
       "obs": "Desligado de propósito: ~8 MB e 862 páginas, fora do foco MEI/IRPF e deixa o build mais pesado. Mude para true se quiser."
+    },
+    {
+      "arquivo": "10-Manual_DASN-SIMEI.pdf",
+      "titulo": "Manual da DASN-SIMEI (Receita Federal)",
+      "url": "https://www8.receita.fazenda.gov.br/simplesnacional/arquivos/manual/manual_dasn-simei.pdf",
+      "obs": "Edição online: set/2024. Entra quando for atualizada."
+    },
+    {
+      "arquivo": "11-Manual_Parcelamento_MEI.pdf",
+      "titulo": "Manual do Parcelamento de Débitos do MEI (Receita Federal)",
+      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/Manual_Parcelamento_MEI.pdf",
+      "obs": "Entra quando houver edição de 2026."
+    },
+    {
+      "arquivo": "12-Manual_Restituicao_MEI.pdf",
+      "titulo": "Manual da Restituição do MEI (Receita Federal)",
+      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/MANUAL_RESTITUICAO_MEI.pdf",
+      "obs": "Edição online é do fim de 2025. Entra quando houver edição de 2026."
+    },
+    {
+      "arquivo": "13-Sebrae_Deveres_Obrigacoes_MEI.pdf",
+      "titulo": "Conheça os deveres e obrigações do MEI (Sebrae)",
+      "url": "https://sebrae.com.br/content/dam/portal-sebrae/na/midias/documentos/pdfs/ebook_conheca-os-deveres-e-obrigacoes-do-MEI.pdf",
+      "obs": "Edição online: 05/2025. O Sebrae não tem PDF de 2026 sobre MEI; o conteúdo recente dele está em páginas (fontes_oficiais.json)."
     }
   ]
 }

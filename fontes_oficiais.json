@@ -1,5 +1,5 @@
 {
-  "_aviso": "Páginas e PDFs oficiais (SOMENTE Sebrae e Receita Federal) lidos ao vivo quando alguma palavra-chave aparece na pergunta. Endereços fora desses sites são ignorados pelo verificador.py. PDFs muito grandes ficam a cargo do atualizar_base.py (fontes_pdfs.json). Edite à vontade.",
+  "_aviso": "Páginas e PDFs oficiais (SOMENTE Sebrae e Receita Federal) lidos ao vivo quando alguma palavra-chave aparece na pergunta. Priorizei conteúdo de 2026. Endereços fora desses sites são ignorados pelo verificador.py. PDFs grandes ficam a cargo do atualizar_base.py (fontes_pdfs.json). Edite à vontade.",
   "paginas": [
     {
       "palavras": [
@@ -11,8 +11,7 @@
       ],
       "urls": [
         "https://sebrae.com.br/empreendedores/guiaparaomei/ja-sou-mei/regularizar-mei/declaracao-anual-faturamento-dasn",
-        "https://www8.receita.fazenda.gov.br/SimplesNacional/Servicos/Grupo.aspx?grp=8",
-        "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/pergunta-resposta/PerguntaoMEI.pdf"
+        "https://www8.receita.fazenda.gov.br/SimplesNacional/Servicos/Grupo.aspx?grp=8"
       ]
     },
     {
@@ -30,8 +29,7 @@
       ],
       "urls": [
         "https://sebrae.com.br/empreendedores/guiaparaomei/ja-sou-mei/regularizar-mei",
-        "https://www8.receita.fazenda.gov.br/SimplesNacional/Servicos/Grupo.aspx?grp=8",
-        "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/pergunta-resposta/PerguntaoMEI.pdf"
+        "https://www8.receita.fazenda.gov.br/SimplesNacional/Servicos/Grupo.aspx?grp=8"
       ]
     },
     {
@@ -73,6 +71,67 @@
       ],
       "urls": [
         "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/marco/receita-federal-emite-termo-de-exclusao-para-devedores-do-simples-nacional-incluindo-mei/perguntas-e-respostas-contribuinte-2026.pdf"
+      ]
+    },
+    {
+      "palavras": [
+        "limite",
+        "faturamento",
+        "teto",
+        "110 mil",
+        "140 mil",
+        "2027",
+        "2028",
+        "perdao",
+        "perdoad",
+        "divida",
+        "prospera",
+        "desenrola"
+      ],
+      "urls": [
+        "https://blog.rn.sebrae.com.br/perdao-dividas-mei-prospera-mei/",
+        "https://sebrae.com.br/subsites/mei"
+      ]
+    },
+    {
+      "palavras": [
+        "guia",
+        "abrir",
+        "abertura",
+        "formaliz",
+        "obrigac",
+        "como ser mei",
+        "quem pode"
+      ],
+      "urls": [
+        "https://blog.rn.sebrae.com.br/guia-mei/",
+        "https://sebrae.com.br/subsites/mei"
+      ]
+    },
+    {
+      "palavras": [
+        "dasn",
+        "declaracao anual",
+        "prazo",
+        "31 de maio",
+        "multa"
+      ],
+      "urls": [
+        "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/maio/microempreendedor-individual-mei-tem-ate-31-de-maio-para-entregar-declaracao-anual"
+      ]
+    },
+    {
+      "palavras": [
+        "imposto de renda",
+        "irpf",
+        "quem deve declarar",
+        "restituicao",
+        "prazo",
+        "cashback",
+        "malha"
+      ],
+      "urls": [
+        "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/marco/receita-comeca-a-receber-declaracoes-do-irpf-no-dia-23-de-marco-prazo-de-entrega-se-encerra-em-29-de-maio"
       ]
     }
   ]
