@@ -153,6 +153,11 @@ async function verificarStatus() {
     }
     if (d.pronto) {
       pronto = true;
+      const baseData = document.getElementById("base-data");
+      if (baseData && d.base_atualizada_em) {
+        const dt = new Date(d.base_atualizada_em);
+        if (!isNaN(dt)) baseData.textContent = "Base de documentos atualizada em " + dt.toLocaleDateString("pt-BR") + ".";
+      }
       definirStatus("Online", "pronto");
       atualizarBotoes();
       concluirCarregamento();

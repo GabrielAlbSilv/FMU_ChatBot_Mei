@@ -30,3 +30,14 @@
 	  desatualizado, ele gera uma nova resposta com base nos sites e avisa o usuário.
 	- Páginas oficiais já conhecidas ficam em fontes_oficiais.json (edite para incluir outras).
 	- Para desligar: VERIFICAR_SITES=0 no .env.  Testes offline: python teste_verificador.py
+
+10. Manter a base atualizada (PDFs):
+	- fontes_pdfs.json lista cada PDF da base e a URL oficial (Sebrae/Receita) de onde baixar a versão atual.
+	- python atualizar_base.py            -> baixa o que mudou e troca os PDFs (valida antes de substituir)
+	  python atualizar_base.py --simular  -> só mostra o que mudaria
+	  python atualizar_base.py --reindexar-> após atualizar, refaz o índice (uso local)
+	- Automático: .github/workflows/atualizar-base.yml roda toda segunda e abre um Pull Request se algum
+	  PDF mudou. Ao aprovar, o Render faz o deploy e refaz o índice. (Ative em Settings > Actions >
+	  General: "Read and write permissions" e "Allow GitHub Actions to create and approve pull requests".)
+	- O índice local também se refaz sozinho se algum PDF mudar (assinatura dos arquivos).
+	- Testes offline: python teste_verificador.py  e  python teste_atualizar_base.py

@@ -103,47 +103,70 @@ class _SemRedirecionar(urllib.request.HTTPRedirectHandler):
 
 
 _abridor = urllib.request.build_opener(_SemRedirecionar)
-_cache_paginas = {}          # url -> (momento, dados | None)
+_cache_paginas = {}          # url -> (momento, (título, linhas) | None)
 _trava_cache = threading.Lock()
 
 
-def baixar_pagina(url):
-    """Baixa o HTML de uma página PERMITIDA. Devolve o texto HTML ou None."""
+_ACEITAR_HTML = ("html", "text/plain")
+_ACEITAR_PDF = ("pdf",)
+
+
+def baixar(url, aceitar=_ACEITAR_HTML, max_bytes=MAX_BYTES_PAGINA, extra=None, timeout=TIMEOUT_PAGINA):
+    """Baixa uma URL PERMITIDA, validando cada redirecionamento.
+
+    Devolve (codigo, corpo, cabecalhos): codigo 200 com o conteúdo, 304 (não mudou, quando `extra`
+    traz If-None-Match/If-Modified-Since) ou None em qualquer falha/bloqueio.
+    `aceitar` = trechos aceitos no Content-Type (ex.: ("pdf",)).
+    """
     atual = url
     for _ in range(MAX_REDIRECIONAMENTOS + 1):
         if not url_permitida(atual):
             _log(f"bloqueado (fora da lista de sites permitidos): {atual}")
-            return None
-        req = urllib.request.Request(atual, headers={
-            "User-Agent": USER_AGENT,
-            "Accept": "text/html,application/xhtml+xml;q=0.9",
-            "Accept-Language": "pt-BR,pt;q=0.9",
-        })
+            return None, None, None
+        cab = {"User-Agent": USER_AGENT, "Accept-Language": "pt-BR,pt;q=0.9",
+               "Accept": "text/html,application/xhtml+xml,application/pdf;q=0.9"}
+        cab.update(extra or {})
+        req = urllib.request.Request(atual, headers=cab)
         try:
-            with _abridor.open(req, timeout=TIMEOUT_PAGINA) as r:
+            with _abridor.open(req, timeout=timeout) as r:
                 tipo = (r.headers.get("Content-Type") or "").lower()
-                if "html" not in tipo and "text/plain" not in tipo:
+                if not any(t in tipo for t in aceitar):
                     _log(f"ignorado (tipo {tipo or '?'}): {atual}")
-                    return None
-                bruto = r.read(MAX_BYTES_PAGINA + 1)[:MAX_BYTES_PAGINA]
-                m = re.search(r"charset=([\w-]+)", tipo)
-                for cod in (m.group(1) if m else "utf-8", "utf-8", "latin-1"):
-                    try:
-                        return bruto.decode(cod)
-                    except (LookupError, UnicodeDecodeError):
-                        continue
-                return None
+                    return None, None, None
+                corpo = r.read(max_bytes + 1)
+                if len(corpo) > max_bytes:
+                    _log(f"ignorado (maior que {max_bytes // 1_000_000} MB): {atual}")
+                    return None, None, None
+                return 200, corpo, dict(r.headers.items())
         except urllib.error.HTTPError as erro:
+            if erro.code == 304:
+                return 304, None, dict(erro.headers.items())
             destino = erro.headers.get("Location") if erro.code in (301, 302, 303, 307, 308) else None
             if not destino:
                 _log(f"HTTP {erro.code}: {atual}")
-                return None
+                return None, None, None
             atual = urllib.parse.urljoin(atual, destino)    # volta ao laço e valida o novo endereço
         except Exception as erro:  # noqa: BLE001  (rede, SSL, timeout...)
             _log(f"falha ao baixar {atual}: {type(erro).__name__}")
-            return None
+            return None, None, None
     _log(f"redirecionamentos demais: {url}")
+    return None, None, None
+
+
+def _decodificar(bruto, tipo=""):
+    m = re.search(r"charset=([\w-]+)", tipo or "")
+    for cod in (m.group(1) if m else "utf-8", "utf-8", "latin-1"):
+        try:
+            return bruto.decode(cod)
+        except (LookupError, UnicodeDecodeError):
+            continue
     return None
+
+
+def baixar_pagina(url):
+    """Compatível com a versão anterior: devolve o HTML (str) de uma página permitida, ou None."""
+    codigo, corpo, cab = baixar(url)
+    return _decodificar(corpo, (cab or {}).get("Content-Type", "")) if codigo == 200 else None
 
 
 # --------------------------------------------------------------- HTML -> texto limpo
@@ -190,16 +213,52 @@ def _palavras(texto):
     return [t for t in re.findall(r"[a-z0-9]+", _sem_acento(texto)) if t not in _STOP and len(t) >= 3]
 
 
-def extrair_trecho(html, consulta, limite=MAX_CHARS_TRECHO):
-    """Devolve (título, texto) com os parágrafos da página que mais combinam com a consulta."""
+def html_para_linhas(html):
+    """HTML -> (título, [linhas de texto com 30+ caracteres])."""
     ex = _ExtratorTexto()
     try:
         ex.feed(html)
     except Exception:  # noqa: BLE001  (HTML quebrado)
         pass
     linhas = [re.sub(r"\s+", " ", l).strip() for l in "".join(ex.partes).split("\n")]
-    linhas = [l for l in linhas if len(l) >= 30]
-    titulo = re.sub(r"\s+", " ", ex.titulo).strip()
+    return re.sub(r"\s+", " ", ex.titulo).strip(), [l for l in linhas if len(l) >= 30]
+
+
+MAX_PAGINAS_PDF = 400        # páginas lidas por PDF
+TEMPO_PDF = 10               # segundos de leitura por PDF (PDFs enormes são lidos até aqui)
+MAX_BYTES_PDF = 25_000_000
+MAX_CHARS_DOC = 600_000      # texto guardado no cache por documento
+
+
+def pdf_para_linhas(corpo, tempo=TEMPO_PDF):
+    """PDF (bytes) -> (título, [linhas]). Lê as páginas até acabar o tempo."""
+    import io
+    from pypdf import PdfReader
+
+    leitor = PdfReader(io.BytesIO(corpo))
+    try:
+        titulo = str((leitor.metadata or {}).get("/Title") or "").strip()
+    except Exception:  # noqa: BLE001
+        titulo = ""
+    limite, total, linhas = time.time() + tempo, 0, []
+    for i, pagina in enumerate(leitor.pages):
+        if i >= MAX_PAGINAS_PDF or time.time() > limite or total > MAX_CHARS_DOC:
+            break
+        try:
+            texto = pagina.extract_text() or ""
+        except Exception:  # noqa: BLE001
+            continue
+        # junta linhas quebradas pelo layout em parágrafos
+        for par in re.split(r"\n\s*\n|(?<=[.:;?])\n", texto):
+            par = re.sub(r"\s+", " ", par).strip()
+            if len(par) >= 30:
+                linhas.append(par)
+                total += len(par)
+    return titulo, linhas
+
+
+def selecionar_trechos(linhas, consulta, limite=MAX_CHARS_TRECHO):
+    """Escolhe os parágrafos que mais combinam com a consulta (mantendo a ordem original)."""
     termos = set(_palavras(consulta))
     pontuadas = []
     for i, l in enumerate(linhas):
@@ -217,30 +276,51 @@ def extrair_trecho(html, consulta, limite=MAX_CHARS_TRECHO):
         escolhidas.append((i, l))
         total += len(l)
     escolhidas.sort()
-    return titulo, "\n".join(l for _, l in escolhidas)
+    return "\n".join(l for _, l in escolhidas)
 
 
-def obter_trecho(url, consulta):
-    """Página -> {"url", "titulo", "site", "texto"} (com cache) ou None."""
+def extrair_trecho(html, consulta, limite=MAX_CHARS_TRECHO):
+    """Devolve (título, texto) com os parágrafos da página HTML que mais combinam com a consulta."""
+    titulo, linhas = html_para_linhas(html)
+    return titulo, selecionar_trechos(linhas, consulta, limite)
+
+
+def ler_documento(url):
+    """Baixa e converte (com cache) uma página HTML ou PDF PERMITIDA -> (título, linhas) ou None."""
     agora = time.time()
     with _trava_cache:
         item = _cache_paginas.get(url)
-        if item and agora - item[0] < VALIDADE_PAGINA:
-            html = item[1]
-        else:
-            html = False
-    if html is False:
-        html = baixar_pagina(url)
-        with _trava_cache:
-            if len(_cache_paginas) >= 100:
-                _cache_paginas.pop(next(iter(_cache_paginas)))
-            _cache_paginas[url] = (agora, html)
-    if not html:
+    if item and agora - item[0] < VALIDADE_PAGINA:
+        return item[1]
+    doc = None
+    codigo, corpo, cab = baixar(url, _ACEITAR_HTML + _ACEITAR_PDF, MAX_BYTES_PDF)
+    if codigo == 200 and corpo:
+        try:
+            if corpo[:5] == b"%PDF-":
+                doc = pdf_para_linhas(corpo)
+            else:
+                html = _decodificar(corpo, (cab or {}).get("Content-Type", ""))
+                doc = html_para_linhas(html) if html else None
+        except Exception as erro:  # noqa: BLE001  (PDF corrompido, pypdf ausente...)
+            _log(f"não consegui ler {url}: {type(erro).__name__}")
+    with _trava_cache:
+        if len(_cache_paginas) >= 40:
+            _cache_paginas.pop(next(iter(_cache_paginas)))
+        # falha (doc=None) só vale por 10 min: assim um site fora do ar por instantes não é "lembrado" por 6 h
+        _cache_paginas[url] = (agora if doc else agora - VALIDADE_PAGINA + 600, doc)
+    return doc
+
+
+def obter_trecho(url, consulta):
+    """Página/PDF -> {"url", "titulo", "site", "texto"} ou None."""
+    doc = ler_documento(url)
+    if not doc:
         return None
-    titulo, texto = extrair_trecho(html, consulta)
+    titulo, linhas = doc
+    texto = selecionar_trechos(linhas, consulta)
     if len(texto) < 80:
         return None
-    return {"url": url, "titulo": titulo or url, "site": nome_do_site(url), "texto": texto}
+    return {"url": url, "titulo": titulo or url.rsplit("/", 1)[-1][:80], "site": nome_do_site(url), "texto": texto}
 
 
 # ----------------------------------------------------- descoberta de endereços (páginas)

@@ -22,6 +22,10 @@ modelo_cache/
 .fastembed_cache/
 .cache/
 
+# Temporários da atualização da base
+*.pdf.tmp
+relatorio_atualizacao.md
+
 # Logs
 *.log
 

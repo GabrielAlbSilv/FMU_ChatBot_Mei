@@ -78,6 +78,17 @@ def listar_pdfs():
     )
 
 
+def assinatura_pdfs():
+    """Impressão digital dos PDFs da base (nome + conteúdo). Muda quando um PDF é atualizado."""
+    import hashlib
+
+    h = hashlib.sha1()
+    for a in listar_pdfs():
+        h.update(a.name.encode("utf-8"))
+        h.update(hashlib.sha1(a.read_bytes()).digest())
+    return h.hexdigest()
+
+
 def criar_embeddings():
     from fastembed import TextEmbedding
 
@@ -187,7 +198,7 @@ def construir_indice(embeddings):
     ARQ_TRECHOS.write_text(json.dumps(trechos, ensure_ascii=False), encoding="utf-8")
     arquivos = sorted({t["fonte"] for t in trechos})
     ARQ_META.write_text(json.dumps({"versao": VERSAO_INDICE, "modelo": NOME_MODELO_EMB,
-                                    "arquivos": arquivos}), encoding="utf-8")
+                                    "arquivos": arquivos, "assinatura": assinatura_pdfs()}), encoding="utf-8")
     print("[INDEX] Índice criado com sucesso.", flush=True)
 
 
@@ -309,7 +320,9 @@ def iniciar_rag():
     if existe:
         meta = json.loads(ARQ_META.read_text(encoding="utf-8"))
         existe = (meta.get("versao") == VERSAO_INDICE
-                  and meta.get("modelo", "sentence-transformers/all-MiniLM-L6-v2") == NOME_MODELO_EMB)
+                  and meta.get("modelo", "sentence-transformers/all-MiniLM-L6-v2") == NOME_MODELO_EMB
+                  # PDF novo/atualizado desde que o índice foi gerado => refaz (base nunca fica velha)
+                  and meta.get("assinatura") == assinatura_pdfs())
     _etapa(f"indice no disco: {'sim' if existe else 'NAO'}")
     if not existe:
         _etapa("criando indice a partir dos PDFs (build nao gerou)")

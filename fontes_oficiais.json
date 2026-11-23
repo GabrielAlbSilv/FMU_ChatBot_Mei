@@ -1,32 +1,78 @@
 {
-  "_aviso": "Páginas oficiais (SOMENTE Sebrae e Receita Federal) lidas primeiro quando alguma palavra-chave aparece na pergunta. Endereços fora desses sites são ignorados pelo verificador.py. Edite à vontade.",
+  "_aviso": "Páginas e PDFs oficiais (SOMENTE Sebrae e Receita Federal) lidos ao vivo quando alguma palavra-chave aparece na pergunta. Endereços fora desses sites são ignorados pelo verificador.py. PDFs muito grandes ficam a cargo do atualizar_base.py (fontes_pdfs.json). Edite à vontade.",
   "paginas": [
     {
-      "palavras": ["dasn", "simei", "declaracao anual", "declarar faturamento", "declaracao do mei"],
+      "palavras": [
+        "dasn",
+        "simei",
+        "declaracao anual",
+        "declarar faturamento",
+        "declaracao do mei"
+      ],
       "urls": [
         "https://sebrae.com.br/empreendedores/guiaparaomei/ja-sou-mei/regularizar-mei/declaracao-anual-faturamento-dasn",
-        "https://www8.receita.fazenda.gov.br/SimplesNacional/Servicos/Grupo.aspx?grp=8"
+        "https://www8.receita.fazenda.gov.br/SimplesNacional/Servicos/Grupo.aspx?grp=8",
+        "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/pergunta-resposta/PerguntaoMEI.pdf"
       ]
     },
     {
-      "palavras": [" das ", "boleto", "guia", "pagamento", "atraso", "atrasad", "regulariz", "divida", "pgmei", "vencimento"],
+      "palavras": [
+        " das ",
+        "boleto",
+        "guia",
+        "pagamento",
+        "atraso",
+        "atrasad",
+        "regulariz",
+        "divida",
+        "pgmei",
+        "vencimento"
+      ],
       "urls": [
         "https://sebrae.com.br/empreendedores/guiaparaomei/ja-sou-mei/regularizar-mei",
-        "https://www8.receita.fazenda.gov.br/SimplesNacional/Servicos/Grupo.aspx?grp=8"
+        "https://www8.receita.fazenda.gov.br/SimplesNacional/Servicos/Grupo.aspx?grp=8",
+        "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/pergunta-resposta/PerguntaoMEI.pdf"
       ]
     },
     {
-      "palavras": ["limite", "faturamento", "teto", "desenquadr", "ultrapass"],
+      "palavras": [
+        "limite",
+        "faturamento",
+        "teto",
+        "desenquadr",
+        "ultrapass"
+      ],
       "urls": [
         "https://sebrae.com.br/empreendedores/guiaparaomei/ja-sou-mei/regularizar-mei",
         "https://sebrae.com.br/empreendedores/guiaparaomei/ja-sou-mei/regularizar-mei/declaracao-anual-faturamento-dasn"
       ]
     },
     {
-      "palavras": ["imposto de renda", "irpf", "dirpf", "restitui", "malha fina", "quem deve declarar", "obrigado a declarar"],
+      "palavras": [
+        "imposto de renda",
+        "irpf",
+        "dirpf",
+        "restitui",
+        "malha fina",
+        "quem deve declarar",
+        "obrigado a declarar"
+      ],
       "urls": [
         "https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/perguntas-frequentes/imposto-de-renda/dirpf",
         "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda"
+      ]
+    },
+    {
+      "palavras": [
+        "exclusao",
+        "excluido",
+        "termo de exclusao",
+        "debito",
+        "devedor",
+        "simples nacional"
+      ],
+      "urls": [
+        "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/marco/receita-federal-emite-termo-de-exclusao-para-devedores-do-simples-nacional-incluindo-mei/perguntas-e-respostas-contribuinte-2026.pdf"
       ]
     }
   ]

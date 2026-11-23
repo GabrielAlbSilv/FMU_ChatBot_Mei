@@ -1,0 +1,52 @@
+# Atualiza semanalmente os PDFs da base com as versões mais recentes do Sebrae e da Receita Federal.
+# Se algum PDF mudou, abre um Pull Request. Ao aprovar (merge), o Render faz o deploy e refaz o
+# índice de busca sozinho (preparar_base.py no build). Também dá para rodar na mão:
+#   aba Actions > "Atualizar base de PDFs" > Run workflow.
+#
+# Requisito (uma vez): Settings > Actions > General > Workflow permissions >
+#   "Read and write permissions" + marcar "Allow GitHub Actions to create and approve pull requests".
+name: Atualizar base de PDFs
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"      # toda segunda, 06:17 no horário de Brasília (09:17 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependência
+        run: pip install pypdf
+
+      - name: Baixar PDFs novos
+        id: atualizar
+        run: python atualizar_base.py
+
+      - name: Abrir Pull Request com a base atualizada
+        if: steps.atualizar.outputs.mudou == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config user.name  "fiscon-atualizador"
+          git config user.email "actions@users.noreply.github.com"
+          ramo="atualiza-base-$(date +%Y%m%d-%H%M)"
+          git checkout -b "$ramo"
+          git add -A -- '*.pdf' base_status.json
+          git commit -m "Atualiza PDFs da base (Sebrae e Receita Federal)"
+          git push origin "$ramo"
+          gh pr create --base "${{ github.event.repository.default_branch }}" --head "$ramo" \
+            --title "Atualiza PDFs da base ($(date +%d/%m/%Y))" \
+            --body-file relatorio_atualizacao.md
+          # Quer publicar sem revisar? Troque o bloco acima por "git push origin HEAD:main".

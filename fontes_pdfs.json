@@ -1,0 +1,35 @@
+{
+  "_aviso": "Lista dos PDFs da base e de onde baixar a versão mais recente. Só endereços do Sebrae e da Receita Federal são aceitos (verificador.url_permitida). 'arquivo' = nome do PDF na raiz do projeto (precisa começar com número, ex.: 4-Nome.pdf); o PDF é SUBSTITUÍDO quando a fonte publica uma versão nova. Se houver 'pagina_indice' + 'padrao', o script procura nessa página o link mais novo que combine com o padrão e usa 'url' como alternativa.",
+  "fontes": [
+    {
+      "arquivo": "4-Perguntas&Respostas3_MEI.pdf",
+      "titulo": "Perguntas e Respostas MEI e Simei (Comitê Gestor do Simples Nacional)",
+      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/pergunta-resposta/PerguntaoMEI.pdf"
+    },
+    {
+      "arquivo": "5-Impostos_PF_MEI.pdf",
+      "titulo": "Imposto de Renda Pessoa Física — Perguntas e Respostas (edição 2026)",
+      "url": "https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/perguntas-e-respostas/dirpf/p-r-irpf-2026-v1-00-2026-04-23.pdf",
+      "pagina_indice": "https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/perguntas-e-respostas/dirpf",
+      "padrao": "p-r-irpf-\\d{4}[^/]*\\.pdf",
+      "obs": "A página_indice ainda não foi confirmada; se não existir, o script usa 'url'. Em 2027 aponte 'url' para a edição nova ou confirme a página_indice."
+    },
+    {
+      "arquivo": "7-Perguntas&Respostas_SimplesNacional.pdf",
+      "titulo": "Perguntas e Respostas Simples Nacional (Comitê Gestor)",
+      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoSN.pdf"
+    },
+    {
+      "arquivo": "8-Exclusao_SimplesNacional_2026.pdf",
+      "titulo": "Exclusão do Simples Nacional 2026 — Perguntas e Respostas (inclui MEI)",
+      "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/marco/receita-federal-emite-termo-de-exclusao-para-devedores-do-simples-nacional-incluindo-mei/perguntas-e-respostas-contribuinte-2026.pdf"
+    },
+    {
+      "arquivo": "9-Perguntas&Respostas_PessoaJuridica_2026.pdf",
+      "titulo": "Perguntas e Respostas da Pessoa Jurídica 2026 (Receita Federal)",
+      "url": "https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/perguntas-e-respostas/ecf/perguntas-e-respostas-da-pessoa-juridica-2026/@@download/file",
+      "ativo": false,
+      "obs": "Desligado de propósito: ~8 MB e 862 páginas, fora do foco MEI/IRPF e deixa o build mais pesado. Mude para true se quiser."
+    }
+  ]
+}

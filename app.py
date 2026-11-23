@@ -76,6 +76,15 @@ def _pdfs_indexados():
         return None
 
 
+def _base_atualizada_em():
+    """Data (ISO) da última vez que o atualizar_base.py trocou algum PDF; None se nunca rodou."""
+    try:
+        import json
+        return json.loads((_AQUI / "base_status.json").read_text(encoding="utf-8")).get("atualizado_em")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _carregar_modulo_rag():
     """Carrega rag.py por caminho, evitando qualquer conflito de import."""
     spec = importlib.util.spec_from_file_location("rag_mei", _ARQ_RAG)
@@ -175,6 +184,7 @@ def status():
         commit=(os.getenv("RENDER_GIT_COMMIT") or "?")[:8],
         indice_no_disco=(_AQUI / "indice" / "vetores.npy").is_file(),
         pdfs_indexados=_pdfs_indexados(),
+        base_atualizada_em=_base_atualizada_em(),
         **_info_arquivo_rag(),
     )
     if iniciando:
