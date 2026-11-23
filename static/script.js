@@ -454,6 +454,13 @@ function htmlContatoNaf() {
     '</div></div>';
 }
 
+// Abrir os detalhes perto do fim da conversa: acompanha a rolagem para o conteúdo aparecer
+areaMensagens.addEventListener("toggle", (e) => {
+  if (e.target.classList && e.target.classList.contains("detalhes-resposta") && e.target.open) {
+    requestAnimationFrame(() => e.target.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+  }
+}, true);
+
 // "QR Code" no celular: abre/fecha o código dentro do cartão do NAF
 areaMensagens.addEventListener("click", (e) => {
   const botaoQr = e.target.closest(".naf-mostrar-qr");
@@ -532,6 +539,34 @@ function mostrarErro(texto, pergunta, msgUsuario) {
 
 // Preenche uma mensagem do bot já concluída: texto, fontes, atalhos e botão copiar.
 // "surgir" = fontes, atalhos e botão copiar aparecem com um leve fade, um após o outro.
+// Menu recolhível com a conferência, as fontes e os atalhos oficiais. Fechado, mostra só um
+// resumo do que há dentro (ex.: "Conferido · 2 fontes · 1 atalho"); a seta abre o conteúdo.
+const ICONE_SETA = svg('<path d="M6 9l6 6 6-6"/>');
+const ICONE_INFO = svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>');
+
+function htmlDetalhes(dados) {
+  const verificacao = htmlVerificacao(dados.verificacao);
+  const fontes = htmlFontes(dados.fontes, dados.paginas_oficiais);
+  const acoes = htmlAcoes(dados.acoes);
+  if (!verificacao && !fontes && !acoes) return "";
+
+  const resumo = [];
+  const v = dados.verificacao || {};
+  if (v.status === "confirmado") resumo.push('<span class="resumo-item ok">Conferido</span>');
+  else if (v.status === "atualizada") resumo.push('<span class="resumo-item atualizada">Atualizada pelo site oficial</span>');
+  const nFontes = (dados.fontes || []).reduce((n, f) => n + (typeof f === "string" ? 1 : (f.paginas || []).length), 0) +
+    (dados.paginas_oficiais || []).length;
+  if (nFontes) resumo.push(`<span class="resumo-item">${nFontes} ${nFontes === 1 ? "fonte" : "fontes"}</span>`);
+  const nAcoes = (dados.acoes || []).length;
+  if (nAcoes) resumo.push(`<span class="resumo-item">${nAcoes} ${nAcoes === 1 ? "atalho oficial" : "atalhos oficiais"}</span>`);
+
+  return '<details class="detalhes-resposta">' +
+    `<summary><span class="det-icone">${ICONE_INFO}</span><span class="det-titulo">Detalhes da resposta</span>` +
+    `<span class="det-resumo">${resumo.join("")}</span><span class="det-seta">${ICONE_SETA}</span></summary>` +
+    `<div class="det-conteudo">${verificacao}${fontes}${acoes}</div>` +
+    "</details>";
+}
+
 // Resposta organizada: o texto fica no balão; abaixo dele, um painel com a conferência,
 // as fontes, os atalhos oficiais e o contato do NAF — cada coisa no seu lugar.
 function finalizarBot(partes, dados, surgir = false) {
@@ -541,8 +576,8 @@ function finalizarBot(partes, dados, surgir = false) {
   if (antigo) antigo.remove();
   const anexos = document.createElement("div");
   anexos.className = "anexos";
-  anexos.innerHTML = htmlVerificacao(dados.verificacao) + htmlFontes(dados.fontes, dados.paginas_oficiais) +
-    htmlAcoes(dados.acoes) + htmlContatoNaf();
+  // Visível: só a resposta e o contato do NAF. O resto fica no menu "Detalhes da resposta" (seta).
+  anexos.innerHTML = htmlDetalhes(dados) + htmlContatoNaf();
   partes.corpo.appendChild(anexos);
 
   const ferramentas = document.createElement("div");
