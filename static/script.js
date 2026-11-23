@@ -401,8 +401,9 @@ function htmlVerificacao(v) {
   } else if (v.status === "inconclusivo") {
     classe = "neutra";
     const n = Number(v.consultadas) || 0;
-    texto = `Li ${n || "algumas"} página(s) do Sebrae e da Receita Federal, mas nenhuma trata diretamente deste ponto; a resposta se baseia nos documentos (PDFs).`;
-    if (v.motivo) extra = `<p class="verif-motivo">${escapar(v.motivo)}</p>`;
+    // Não é erro: as páginas oficiais lidas não tinham um dado sobre este ponto para comparar.
+    // (O "motivo" escrito pelo modelo é técnico e confundia o usuário; fica só no log do servidor.)
+    texto = `Consultei ${n || "algumas"} página(s) do Sebrae e da Receita Federal e nenhuma traz um dado diferente sobre este ponto. A resposta segue os documentos oficiais da base (PDFs).`;
   } else {
     classe = "neutra";
     const leu = Number(v.consultadas) > 0;

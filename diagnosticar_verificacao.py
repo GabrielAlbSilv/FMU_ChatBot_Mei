@@ -24,6 +24,20 @@ def main():
 
     print(f"== Conferência ligada (VERIFICAR_SITES): {V.ATIVO} | buscador de endereços: {V.BUSCA_DESCOBERTA}\n")
 
+    print("== 0) O que a conferência do chat usa (base local primeiro; ao vivo se não houver página sobre o assunto)")
+    rica, destaques = V.expandir_consulta(args.pergunta)
+    print(f"   consulta: {rica[:160]}")
+    print(f"   expressões do assunto: {destaques or '(nenhuma — assunto não reconhecido em _INTENCOES)'}")
+    try:
+        import base_web
+        base_web.carregar()
+    except Exception as erro:  # noqa: BLE001
+        print(f"   base local indisponível: {erro}")
+    for i, t in enumerate(V.coletar_trechos(args.pergunta, args.pergunta), 1):
+        print(f"   [W{i}] {'SOBRE O ASSUNTO' if t.get('destaque') else 'genérica      '} {t['url']}")
+        print(f"        {t['texto'][:200].replace(chr(10), ' ')}")
+    print()
+
     print("== 1) Páginas candidatas")
     sementes = V.urls_das_sementes(args.pergunta)
     print(f"   de fontes_oficiais.json: {len(sementes)}")

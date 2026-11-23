@@ -258,12 +258,17 @@ def pdf_para_linhas(corpo, tempo=TEMPO_PDF):
     return titulo, linhas
 
 
-def selecionar_trechos(linhas, consulta, limite=MAX_CHARS_TRECHO):
-    """Escolhe os parágrafos que mais combinam com a consulta (mantendo a ordem original)."""
+def selecionar_trechos(linhas, consulta, limite=MAX_CHARS_TRECHO, destaques=()):
+    """Escolhe os parágrafos que mais combinam com a consulta (mantendo a ordem original).
+
+    destaques: expressões do ASSUNTO da pergunta (ex.: "quem pode", "requisit"); o parágrafo que
+    traz uma delas vale bem mais que um que só repete palavras soltas como "MEI".
+    """
     termos = set(_palavras(consulta))
     pontuadas = []
     for i, l in enumerate(linhas):
         pts = len(termos & set(_palavras(l)))
+        pts += 3 * contar_destaques(l, destaques)
         # números/valores/datas costumam ser o que muda: dá um bônus a eles
         if pts and re.search(r"R\$|\d{2,}|%", l):
             pts += 1
@@ -312,7 +317,7 @@ def ler_documento(url):
     return doc
 
 
-def obter_trecho(url, consulta):
+def obter_trecho(url, consulta, destaques=()):
     """Página/PDF -> {"url", "titulo", "site", "texto"} ou None."""
     doc = ler_documento(url)
     if not doc:
@@ -323,10 +328,11 @@ def obter_trecho(url, consulta):
         base_web.aprender(url, titulo, linhas)
     except Exception as erro:  # noqa: BLE001
         _log(f"não consegui guardar na base web: {type(erro).__name__}")
-    texto = selecionar_trechos(linhas, consulta)
+    texto = selecionar_trechos(linhas, consulta, destaques=destaques)
     if len(texto) < 80:
         return None
-    return {"url": url, "titulo": titulo or url.rsplit("/", 1)[-1][:80], "site": nome_do_site(url), "texto": texto}
+    return {"url": url, "titulo": titulo or url.rsplit("/", 1)[-1][:80], "site": nome_do_site(url), "texto": texto,
+            "destaque": contar_destaques(texto, destaques) > 0}
 
 
 # ----------------------------------------------------- descoberta de endereços (páginas)
@@ -374,12 +380,17 @@ def _buscar_ddg(consulta, filtro_site):
     return urls[:3]
 
 
-def descobrir_urls(consulta):
-    urls = urls_das_sementes(consulta)
+def descobrir_urls(consulta, busca=None):
+    """Sementes (fontes_oficiais.json) que combinam com `consulta` + endereços do buscador para `busca`.
+
+    `busca` é a pergunta curta do usuário: o buscador responde mal a consultas longas cheias de sinônimos.
+    """
+    urls = [u for u in urls_das_sementes(consulta) if not pagina_de_listagem(u)]
     if BUSCA_DESCOBERTA:
+        termo = (busca or consulta)[:200]
         filtros = ("sebrae.com.br", "gov.br/receitafederal", "receita.fazenda.gov.br")
         with ThreadPoolExecutor(max_workers=3) as ex:
-            for lote in ex.map(lambda f: _buscar_ddg(consulta, f), filtros):
+            for lote in ex.map(lambda f: [u for u in _buscar_ddg(termo, f) if not pagina_de_listagem(u)], filtros):
                 urls.extend(u for u in lote if u not in urls)
     # Intercala Sebrae/Receita para as duas fontes aparecerem, e limita o total.
     sebrae = [u for u in urls if nome_do_site(u) == "Sebrae"]
@@ -389,39 +400,137 @@ def descobrir_urls(consulta):
     return list(dict.fromkeys(mistas))[:MAX_PAGINAS]
 
 
-MIN_TRECHOS_LOCAIS = 2       # com isso de páginas na base web local, nem vai à internet
+MIN_TRECHOS_LOCAIS = 2       # com isso de páginas RELEVANTES na base web local, nem vai à internet
+
+# ------------------------------------------------- assunto da pergunta -> termos da busca oficial
+# Por que existe: "Quem pode ser MEI?" vira só a palavra "mei" depois de tirar as palavras comuns
+# (quem, pode, ser). A busca então trazia qualquer página com "MEI" (página de busca do blog, DASN,
+# benefícios...) e a conferência terminava sempre em "nenhuma trata diretamente deste ponto".
+# Cada linha: (como a pergunta costuma vir, termos que as páginas oficiais usam, expressões que
+# indicam que o parágrafo trata MESMO do assunto).
+_INTENCOES = [
+    (r"\bquem (pode|podera)\b|\b(posso|pode|podem|consigo) (ser|virar|me tornar|se tornar|abrir)\b.{0,20}\bmei\b|"
+     r"\brequisit|\bcondic\w* (para|pra) (ser|abrir|virar)",
+     "requisitos quem pode ser mei se tornar condicoes socio titular administrador outra empresa atividade "
+     "permitida limite faturamento empregado",
+     [r"quem pode", r"requisit", r"pode (se tornar|ser|abrir)\b.{0,15}mei", r"nao (ser|pode ser|pode ter)\b.{0,20}"
+      r"(socio|titular|administrador)", r"atividades? permitid"]),
+    (r"empregad|funcionari|\bcontrat",
+     "empregado contratar funcionario salario minimo piso categoria",
+     [r"empregad", r"contrat\w* (um|1)"]),
+    (r"atividades? (permitid|que|do mei|o mei|pode)|quais atividades|pode exercer|ocupac|\bcnae\b|profiss|"
+     r"o que (o mei )?pode (fazer|vender)",
+     "atividades permitidas ocupacoes lista cnae",
+     [r"atividades? permitid", r"ocupac", r"\bcnae\b"]),
+    (r"como (abrir|formalizar|me formalizar|criar)|abrir (o |um |meu )?mei|\bformaliz|passo a passo",
+     "como abrir mei passo a passo formalizacao portal do empreendedor gov.br",
+     [r"passo a passo", r"como abrir", r"formaliz"]),
+    (r"nota fiscal|nfs-?e|\bnf\b",
+     "nota fiscal emissao nfs-e emissor nacional obrigatoria",
+     [r"nota fiscal", r"nfs-?e"]),
+    (r"benefici|aposentad|auxilio|maternidade|\binss\b|previdenc",
+     "beneficios previdenciarios aposentadoria auxilio-doenca salario-maternidade inss carencia",
+     [r"aposentad", r"auxilio", r"maternidade", r"benefic"]),
+    (r"\bbaixa\b|encerr|fechar (o |meu )?(mei|cnpj|empresa)|cancelar (o |meu )?(mei|cnpj)",
+     "baixa encerramento cnpj mei dividas",
+     [r"\bbaixa\b", r"encerr"]),
+    (r"\b(das|boleto|guia)\b.{0,30}(atras|venc|nao paguei)|atrasad|parcel",
+     "das atraso multa juros parcelamento pgmei regularizar",
+     [r"atras", r"multa", r"parcel"]),
+    (r"\bdasn\b|declaracao anual",
+     "declaracao anual dasn-simei prazo 31 de maio multa",
+     [r"\bdasn", r"declaracao anual"]),
+    (r"\blimite\b|\bteto\b|\bfatur|desenquadr|excesso",
+     "limite faturamento anual 81 mil proporcional excesso desenquadramento",
+     [r"\blimite\b", r"81(\.000| mil)", r"desenquadr"]),
+    (r"(quanto|valor|custa)\b.{0,30}\b(das|boleto)\b|\bdas\b.{0,20}(valor|quanto)",
+     "valor das mensal inss icms iss salario minimo",
+     [r"valor (do|mensal)", r"\binss\b", r"r\$ ?\d"]),
+    (r"o que (e|significa) (o |ser )?mei|\bo que e microempreendedor",
+     "o que e mei microempreendedor individual",
+     [r"o que e (o )?mei", r"microempreendedor individual"]),
+    (r"imposto de renda|\birpf\b|\bdirpf\b|declarar (o )?ir\b",
+     "imposto de renda declaracao obrigado quem deve declarar",
+     [r"quem (deve|precisa|esta obrigad)", r"obrigad"]),
+]
 
 
-def trechos_da_base_local(consulta, k=MAX_PAGINAS):
+def expandir_consulta(pergunta, consulta=""):
+    """(consulta_rica, destaques) para buscar nas páginas oficiais o ASSUNTO da pergunta."""
+    texto = _sem_acento(pergunta or "")
+    extras, destaques = [], []
+    for padrao, termos, marcas in _INTENCOES:
+        if re.search(padrao, texto):
+            extras.append(termos)
+            destaques.extend(marcas)
+    rica = " ".join(dict.fromkeys(x for x in (pergunta, " ".join(extras), consulta) if x))
+    return rica, list(dict.fromkeys(destaques))
+
+
+def contar_destaques(texto, destaques):
+    """Quantas expressões do assunto aparecem no texto (cada uma conta uma vez)."""
+    if not destaques:
+        return 0
+    t = _sem_acento(texto)
+    return sum(1 for d in destaques if re.search(d, t))
+
+
+# Páginas de listagem não respondem nada: busca do site, feeds, tags, categorias, autores, paginação.
+_LISTAGEM = re.compile(r"[?&](s|q|busca|search|termo)=|/feed/?$|/(tag|tags|category|categoria|author|autor)/|"
+                       r"/page/\d+|wp-json|/comments?/|/@@search|/busca/?$", re.I)
+
+
+def pagina_de_listagem(url):
+    return bool(_LISTAGEM.search(str(url or "")))
+
+
+def trechos_da_base_local(consulta, k=MAX_PAGINAS, destaques=(), preferidas=()):
     """Páginas oficiais já coletadas periodicamente (base_web.py). Instantâneo, sem internet."""
     try:
         import base_web
-        return [dict(t, origem="base_local") for t in base_web.buscar(consulta, k=k)]
+        return [dict(t, origem="base_local") for t in base_web.buscar(consulta, k=k, destaques=destaques,
+                                                                      preferidas=preferidas)]
     except Exception as erro:  # noqa: BLE001
         _log(f"base web indisponível: {type(erro).__name__}")
         return []
 
 
-def coletar_trechos(consulta):
-    """Trechos oficiais para a conferência: primeiro a base local; se não bastar, busca ao vivo."""
-    locais = trechos_da_base_local(consulta)
-    if len(locais) >= MIN_TRECHOS_LOCAIS:
-        _log(f"{len(locais)} página(s) da base web local (sem acessar a internet agora)")
-        return locais
-    vivos = coletar_trechos_ao_vivo(consulta)
+def coletar_trechos(consulta, pergunta=None):
+    """Trechos oficiais para a conferência: primeiro a base local; se não bastar, busca ao vivo.
+
+    `consulta`: consulta de busca (às vezes reescrita pelo modelo, com sinônimos);
+    `pergunta`: o que a pessoa escreveu — define o ASSUNTO (ver _INTENCOES).
+    A base local só basta se trouxer páginas que tratam do assunto (com "destaque"); páginas que só
+    repetem "MEI" não contam, e aí as páginas oficiais conhecidas do assunto são lidas ao vivo.
+    """
+    rica, destaques = expandir_consulta(pergunta or consulta, consulta if pergunta else "")
+    preferidas = set(urls_das_sementes(rica))
+    locais = trechos_da_base_local(rica, destaques=destaques, preferidas=preferidas)
+    relevantes = [t for t in locais if t.get("destaque") or not destaques]
+    if len(relevantes) >= MIN_TRECHOS_LOCAIS or (relevantes and len(locais) >= MIN_TRECHOS_LOCAIS
+                                                 and any(t["url"] in preferidas for t in relevantes)):
+        _log(f"{len(locais)} página(s) da base web local, {len(relevantes)} sobre o assunto (sem acessar a internet)")
+        return _ordenar_por_relevancia(locais)
+    _log(f"base local com {len(relevantes)} página(s) sobre o assunto: lendo as páginas oficiais ao vivo")
+    vivos = coletar_trechos_ao_vivo(rica, destaques=destaques, busca=pergunta or consulta)
     urls = {t["url"] for t in vivos}
-    return (vivos + [t for t in locais if t["url"] not in urls])[:MAX_PAGINAS]
+    return _ordenar_por_relevancia(vivos + [t for t in locais if t["url"] not in urls])[:MAX_PAGINAS]
 
 
-def coletar_trechos_ao_vivo(consulta):
+def _ordenar_por_relevancia(trechos):
+    """Páginas com trecho sobre o assunto primeiro (o verificador lê na ordem [W1], [W2]...)."""
+    return sorted(trechos, key=lambda t: not t.get("destaque"))
+
+
+def coletar_trechos_ao_vivo(consulta, destaques=(), busca=None):
     """Lê as páginas oficiais encontradas. Devolve lista de {"url","titulo","site","texto"}."""
-    urls = descobrir_urls(consulta)
+    urls = descobrir_urls(consulta, busca=busca)
     _log(f"páginas candidatas: {urls}")
     if not urls:
         return []
     achados = []
     with ThreadPoolExecutor(max_workers=MAX_PAGINAS) as ex:
-        futuros = [ex.submit(obter_trecho, u, consulta) for u in urls]
+        futuros = [ex.submit(obter_trecho, u, consulta, destaques) for u in urls]
         limite = time.time() + TEMPO_TOTAL
         for f in futuros:
             try:
@@ -580,7 +689,7 @@ def verificar(cliente, modelo, opcoes, pergunta, consulta_busca, rascunho, trech
     try:
         # trechos_web pode vir pronto: o rag.py começa a coleta em paralelo com o rascunho
         if trechos_web is None:
-            trechos_web = coletar_trechos(consulta_busca or pergunta)
+            trechos_web = coletar_trechos(consulta_busca or pergunta, pergunta)
     except Exception as erro:  # noqa: BLE001
         _log(f"coleta falhou: {type(erro).__name__}: {erro}")
         return base

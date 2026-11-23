@@ -186,6 +186,78 @@
       "urls": [
         "https://www.gov.br/receitafederal/pt-br/canais_atendimento/fale-conosco/empresa/suporte-a-dirf"
       ]
+    },
+    {
+      "palavras": [
+        "quem pode",
+        "requisit",
+        "pode ser mei",
+        "posso ser mei",
+        "tornar mei",
+        "virar mei",
+        "condicoes para"
+      ],
+      "urls": [
+        "https://blog.rn.sebrae.com.br/como-abrir-mei-2026-passo-a-passo/",
+        "https://blog.rn.sebrae.com.br/guia-mei/",
+        "https://blog.rn.sebrae.com.br/atividades-permitidas-mei/"
+      ]
+    },
+    {
+      "palavras": [
+        "atividade",
+        "ocupac",
+        "cnae",
+        "profiss"
+      ],
+      "urls": [
+        "https://blog.rn.sebrae.com.br/atividades-permitidas-mei/"
+      ]
+    },
+    {
+      "palavras": [
+        "nota fiscal",
+        "nfs-e",
+        "nfse"
+      ],
+      "urls": [
+        "https://blog.rn.sebrae.com.br/nota-fiscal-mei/"
+      ]
+    },
+    {
+      "palavras": [
+        "benefic",
+        "aposentad",
+        "auxilio",
+        "maternidade",
+        "inss",
+        "previdenc"
+      ],
+      "urls": [
+        "https://blog.rn.sebrae.com.br/impostos-mei/",
+        "https://sebrae.com.br/content/dam/portal-sebrae/na/midias/documentos/pdfs/ebook_direitos-previdenciarios-mei-beneficios-inss.pdf"
+      ]
+    },
+    {
+      "palavras": [
+        "empregad",
+        "funcionari",
+        "contrat"
+      ],
+      "urls": [
+        "https://blog.rn.sebrae.com.br/guia-mei/",
+        "https://blog.rn.sebrae.com.br/obrigacoes-do-mei-2026/"
+      ]
+    },
+    {
+      "palavras": [
+        "o que e mei",
+        "o que e o mei",
+        "microempreendedor individual"
+      ],
+      "urls": [
+        "https://blog.rn.sebrae.com.br/guia-mei/"
+      ]
     }
   ],
   "_aviso_rastrear": "'rastrear': páginas de partida que o base_web.py visita periodicamente (BASE_WEB_HORAS). De cada uma, segue os links cujo endereço combina com 'seguir' (expressão regular), até 'max' links. Só endereços do Sebrae e da Receita Federal são aceitos; o resto é ignorado.",

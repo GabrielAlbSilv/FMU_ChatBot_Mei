@@ -105,3 +105,11 @@
 	       relatorio_reteste.md com os casos do relatório de testes para revisão antes da divulgação).
 	- Na tela, o menu "Detalhes da resposta" mostra o selo "Cálculo pelas regras oficiais de <ano>" com o
 	  resumo do cálculo e o link da fonte.
+
+16. Conferência com os sites em perguntas básicas ("Quem pode ser MEI?", "O MEI pode ter empregado?"):
+	- A busca nas páginas oficiais agora parte do ASSUNTO da pergunta (verificador.py, _INTENCOES): "quem pode ser
+	  MEI" procura requisitos/condições/atividade permitida, e não só a palavra "MEI". Para incluir um assunto novo,
+	  acrescente uma linha em _INTENCOES e, se houver, a página oficial certa em fontes_oficiais.json ("paginas").
+	- A cópia local dos sites só é usada se tiver página que trate do assunto; senão, as páginas oficiais do
+	  assunto são lidas na hora. Páginas de busca, feed, tag e categoria dos sites não entram mais na base.
+	- Para ver o que a conferência escolhe para uma pergunta:  python diagnosticar_verificacao.py "Quem pode ser MEI?"

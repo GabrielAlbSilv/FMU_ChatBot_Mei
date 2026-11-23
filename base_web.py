@@ -148,11 +148,15 @@ def _reindexar():
     _estado["indice"] = _Indice(passagens)
 
 
-def buscar(consulta, k=4, min_termos=2, limite_chars=V.MAX_CHARS_TRECHO):
+def buscar(consulta, k=4, min_termos=2, limite_chars=V.MAX_CHARS_TRECHO, destaques=(), preferidas=()):
     """Melhores páginas da base local para a consulta.
 
-    Devolve [{"url","titulo","site","data","tipo","texto"}] (uma entrada por página, com as passagens
-    mais relevantes dela). Só entra página que tenha pelo menos `min_termos` palavras da consulta.
+    Devolve [{"url","titulo","site","data","tipo","texto","destaque"}] (uma entrada por página, com as
+    passagens mais relevantes dela). Só entra página que tenha pelo menos `min_termos` palavras da consulta.
+    destaques: expressões do assunto (verificador.expandir_consulta) — a passagem que traz uma delas
+    vale bem mais; "destaque"=True diz que a página trata do assunto e não só repete palavras.
+    preferidas: páginas oficiais indicadas para o assunto em fontes_oficiais.json (ganham bônus).
+    Páginas de listagem (busca do site, feed, tag...) nunca entram.
     """
     indice = _estado["indice"]
     if not consulta or not indice.n:
@@ -160,19 +164,26 @@ def buscar(consulta, k=4, min_termos=2, limite_chars=V.MAX_CHARS_TRECHO):
     termos, pontos, acertos = indice.pontuar(consulta)
     exigido = min(min_termos, len(termos)) or 1
     ano = str(datetime.now(V.FUSO_BR).year)
+    preferidas = set(preferidas or ())
     melhores = []
     for i, p in pontos.items():
-        if acertos[i] < exigido:
+        pas = indice.passagens[i]
+        if acertos[i] < exigido or V.pagina_de_listagem(pas["url"]):
             continue
-        bonus = 1.15 if ano in (indice.passagens[i]["data"] or "") else 1.0   # conteúdo do ano corrente
-        melhores.append((p * bonus, i))
+        bonus = 1.15 if ano in (pas["data"] or "") else 1.0   # conteúdo do ano corrente
+        marcas = V.contar_destaques(pas["titulo"] + " " + pas["texto"], destaques)
+        bonus *= 1 + 0.8 * min(marcas, 3)
+        if pas["url"] in preferidas:
+            bonus *= 1.3
+        melhores.append((p * bonus, i, marcas > 0))
     melhores.sort(reverse=True)
     por_url = {}
-    for pts, i in melhores:
+    for pts, i, marca in melhores:
         pas = indice.passagens[i]
-        grupo = por_url.setdefault(pas["url"], {"pontos": pts, "itens": []})
+        grupo = por_url.setdefault(pas["url"], {"pontos": pts, "itens": [], "destaque": False})
         if len(grupo["itens"]) < 3:
             grupo["itens"].append(pas)
+            grupo["destaque"] = grupo["destaque"] or marca
     saida = []
     for url, g in sorted(por_url.items(), key=lambda kv: -kv[1]["pontos"])[:k]:
         base = g["itens"][0]
@@ -183,7 +194,7 @@ def buscar(consulta, k=4, min_termos=2, limite_chars=V.MAX_CHARS_TRECHO):
             texto.append(item["texto"])
             total += len(item["texto"])
         saida.append({"url": url, "titulo": base["titulo"], "site": base["site"], "data": base["data"],
-                      "tipo": base["tipo"], "texto": "\n".join(texto)[:limite_chars]})
+                      "tipo": base["tipo"], "texto": "\n".join(texto)[:limite_chars], "destaque": g["destaque"]})
     return saida
 
 
@@ -194,7 +205,8 @@ def _links(html, base_url, padrao):
     for href in re.findall(r'href=["\']([^"\'#]+)["\']', html or "", re.I):
         url = urllib.parse.urljoin(base_url, href.replace("&amp;", "&").strip())
         url = re.sub(r"/(view|@@display-file/file)$", "", url)
-        if V.url_permitida(url) and re.search(padrao, url, re.I) and url not in achados and url != base_url:
+        if (V.url_permitida(url) and re.search(padrao, url, re.I) and url not in achados and url != base_url
+                and not V.pagina_de_listagem(url)):      # busca do site, feed, tag... não respondem nada
             achados.append(url)
     return achados
 

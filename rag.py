@@ -937,13 +937,17 @@ def eh_conversa_simples(pergunta):
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="conferencia")
 
 
-def trechos_da_web(consulta, k=WEB_NA_RESPOSTA):
+def trechos_da_web(consulta, k=WEB_NA_RESPOSTA, pergunta=None):
     """Páginas oficiais recentes da base web local, no mesmo formato dos trechos dos PDFs."""
     if k <= 0:
         return []
     try:
         import base_web
-        achados = base_web.buscar(consulta, k=k, min_termos=3, limite_chars=1600)
+        rica, destaques = verificador.expandir_consulta(pergunta or consulta, consulta if pergunta else "")
+        achados = base_web.buscar(rica, k=k * 2, min_termos=3, limite_chars=1600, destaques=destaques)
+        if destaques:      # só entra na resposta página que trata do assunto (não basta repetir "MEI")
+            achados = [a for a in achados if a.get("destaque")]
+        achados = achados[:k]
     except Exception as erro:  # noqa: BLE001
         print(f"[RAG] base web indisponível: {erro}", flush=True)
         return []
@@ -1028,11 +1032,11 @@ def responder_stream(indice, cliente, pergunta, historico=None):
             anteriores = [m["content"] for m in historico if m["role"] == "user"]
             consultas.append(" ".join(filter(None, [anteriores[-1] if anteriores else "", situacao, pergunta])))
         print(f"[RAG] consultas: {consultas}", flush=True)
-        trechos = indice.buscar_varias(consultas) + trechos_da_web(consultas[-1])
+        trechos = indice.buscar_varias(consultas) + trechos_da_web(consultas[-1], pergunta=pergunta)
 
     conferir = verificador.ATIVO and not conversa
     # Começa já a juntar as páginas oficiais (base local -> internet), enquanto o modelo escreve.
-    coleta = _executor.submit(verificador.coletar_trechos, consultas[-1]) if conferir else None
+    coleta = _executor.submit(verificador.coletar_trechos, consultas[-1], pergunta) if conferir else None
     mensagens = montar_mensagens(trechos, pergunta, historico, fatos, situacao)
 
     if conferir and CONFERENCIA_MODO == "antes":

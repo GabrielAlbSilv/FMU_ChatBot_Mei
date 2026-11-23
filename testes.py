@@ -650,6 +650,73 @@ class Velocidade(unittest.TestCase):
                       chamadas[-1]["messages"][-1]["content"])
 
 
+class BuscaOficialPorAssunto(unittest.TestCase):
+    """Conferência de perguntas básicas ("Quem pode ser MEI?"): a página certa precisa ser escolhida."""
+
+    PAGINAS = {
+        "https://blog.rn.sebrae.com.br/?s=mei": ["Resultados da busca por MEI: Guia MEI, Natal para o MEI, "
+                                                 "Site para MEI, Impostos do MEI, MEI e CNPJ, MEI 2026"],
+        "https://sebrae.com.br/empreendedores/guiaparaomei/dasn": ["Declaração anual de faturamento do MEI (DASN): "
+                                                                  "o MEI informa o faturamento do ano anterior."],
+        "https://blog.rn.sebrae.com.br/impostos-mei/": ["Auxílio-doença: o MEI pode solicitar o auxílio-doença após "
+                                                       "12 contribuições. O MEI tem salário-maternidade."],
+        "https://blog.rn.sebrae.com.br/como-abrir-mei-2026-passo-a-passo/": [
+            "Requisitos para ser MEI em 2026: não ser sócio, administrador ou titular de outra empresa; exercer "
+            "atividade permitida; respeitar o limite de faturamento de R$ 81 mil; ter no máximo um empregado."],
+    }
+
+    def setUp(self):
+        import base_web as B
+        self.B = B
+        antigo = dict(B._estado["paginas"])
+        B._estado["paginas"] = {u: {"titulo": u.rsplit("/", 2)[-2], "site": v.nome_do_site(u), "data": "",
+                                    "tipo": "pagina", "passagens": t} for u, t in self.PAGINAS.items()}
+        B._reindexar()
+        self.addCleanup(lambda: (B._estado.update(paginas=antigo), B._reindexar()))
+
+    def test_quem_pode_ser_mei_vira_busca_por_requisitos(self):
+        rica, destaques = v.expandir_consulta("Quem pode ser MEI?")
+        self.assertIn("requisitos", rica)
+        self.assertTrue(destaques)
+        self.assertEqual(self.B._tokens("Quem pode ser MEI?"), ["mei"])   # o problema: sobrava só "mei"
+
+    def test_pagina_dos_requisitos_vem_primeiro_e_listagem_fica_de_fora(self):
+        with mock.patch.object(v, "coletar_trechos_ao_vivo", side_effect=AssertionError("não devia ir à internet")):
+            trechos = v.coletar_trechos("Quem pode ser MEI?", "Quem pode ser MEI?")
+        urls = [t["url"] for t in trechos]
+        self.assertEqual(urls[0], "https://blog.rn.sebrae.com.br/como-abrir-mei-2026-passo-a-passo/")
+        self.assertTrue(trechos[0]["destaque"])
+        self.assertNotIn("https://blog.rn.sebrae.com.br/?s=mei", urls)
+
+    def test_sem_pagina_sobre_o_assunto_le_as_oficiais_ao_vivo(self):
+        self.B._estado["paginas"] = {u: p for u, p in self.B._estado["paginas"].items() if "como-abrir" not in u}
+        self.B._reindexar()
+        ao_vivo = [{"url": "https://blog.rn.sebrae.com.br/guia-mei/", "titulo": "Guia MEI", "site": "Sebrae",
+                    "texto": "Quem pode ser MEI: ...", "destaque": True}]
+        with mock.patch.object(v, "coletar_trechos_ao_vivo", return_value=ao_vivo) as vivo:
+            trechos = v.coletar_trechos("quem pode ser mei", "Quem pode ser MEI?")
+        vivo.assert_called_once()
+        self.assertEqual(vivo.call_args.kwargs["busca"], "Quem pode ser MEI?")   # buscador recebe a pergunta curta
+        self.assertEqual(trechos[0]["url"], "https://blog.rn.sebrae.com.br/guia-mei/")
+
+    def test_destaques_escolhem_o_paragrafo_certo_ao_vivo(self):
+        linhas = ["O MEI tem muitas vantagens e o MEI cresce no Brasil, MEI MEI.",
+                  "Quem pode ser MEI: não ser sócio de outra empresa e exercer atividade permitida."]
+        rica, destaques = v.expandir_consulta("Quem pode ser MEI?")
+        texto = v.selecionar_trechos(linhas, rica, limite=90, destaques=destaques)
+        self.assertIn("não ser sócio", texto)
+
+    def test_paginas_de_listagem(self):
+        for u in ("https://blog.rn.sebrae.com.br/?s=mei", "https://blog.rn.sebrae.com.br/guia-mei/feed/",
+                  "https://blog.rn.sebrae.com.br/tag/mei/", "https://blog.rn.sebrae.com.br/category/mei/page/2"):
+            self.assertTrue(v.pagina_de_listagem(u), u)
+        self.assertFalse(v.pagina_de_listagem("https://blog.rn.sebrae.com.br/como-abrir-mei-2026-passo-a-passo/"))
+
+    def test_sementes_cobrem_perguntas_basicas(self):
+        for p in ("quem pode ser mei", "atividades permitidas", "nota fiscal", "aposentadoria", "empregado"):
+            self.assertTrue(v.urls_das_sementes(p), p)
+
+
 class RegrasFiscais(unittest.TestCase):
     """Casos do relatório de testes (NAF / FiscOn): contas feitas pelo código, não pelo modelo."""
 
