@@ -302,6 +302,9 @@ const ICONE_LIVRO = svg('<path d="M4 19.5A2.5 2.5 0 016.5 17H20V3H6.5A2.5 2.5 0 
 const ICONE_EMAIL = svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>');
 const ICONE_CALENDARIO = svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M8 14h2M14 14h2M8 18h2"/>');
 const ICONE_REPETIR = svg('<path d="M3 12a9 9 0 0115.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 01-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>');
+const ICONE_OUVIR = svg('<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/>');
+const ICONE_PARAR = svg('<rect x="6" y="6" width="12" height="12" rx="2"/>');
+const ICONE_LIBRAS = svg('<path d="M8 13V5.5a1.5 1.5 0 013 0V12"/><path d="M11 11.5v-7a1.5 1.5 0 013 0V12"/><path d="M14 10.5a1.5 1.5 0 013 0V14a6 6 0 01-6 6h-1a6 6 0 01-5.2-3l-2.3-4a1.5 1.5 0 012.6-1.5L8 13"/>');
 const ICONE_FONE = svg('<path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="2" y="14" width="5" height="7" rx="2"/><rect x="17" y="14" width="5" height="7" rx="2"/>');
 
 // Botões de atalho (o servidor manda o nome do ícone em "icone"; ver ACOES_PORTAL no rag.py)
@@ -461,6 +464,17 @@ areaMensagens.addEventListener("click", (e) => {
   if (aberto) acompanharRolagem();
 });
 
+// Aviso rápido acima da caixa de texto (microfone, Libras, erros curtos)
+let temporizadorAviso = null;
+function avisar(texto, tipo = "") {
+  const el = document.getElementById("aviso-rapido");
+  if (!el) return;
+  el.textContent = texto;
+  el.className = `aviso-rapido visivel ${tipo}`.trim();
+  clearTimeout(temporizadorAviso);
+  temporizadorAviso = setTimeout(() => el.classList.remove("visivel"), tipo === "erro" ? 5000 : 3800);
+}
+
 function rolarParaBaixo(suave = true) {
   requestAnimationFrame(() => {
     areaMensagens.scrollTo({ top: areaMensagens.scrollHeight, behavior: suave ? "smooth" : "auto" });
@@ -540,6 +554,24 @@ function finalizarBot(partes, dados, surgir = false) {
   copiar.title = "Copiar resposta";
   copiar.addEventListener("click", () => copiarTexto(dados.texto, copiar));
   ferramentas.appendChild(copiar);
+  // Ouvir: lê a resposta em voz alta (voz.js). Só aparece se o navegador tiver síntese de voz.
+  if ("speechSynthesis" in window) {
+    const ouvir = document.createElement("button");
+    ouvir.type = "button";
+    ouvir.className = "botao-ferramenta botao-ouvir";
+    ouvir.innerHTML = `${ICONE_OUVIR}<span>Ouvir</span>`;
+    ouvir.title = "Ouvir a resposta em voz alta";
+    ouvir.addEventListener("click", () => window.FiscOnVoz && window.FiscOnVoz.alternarLeitura(dados.texto, ouvir));
+    ferramentas.appendChild(ouvir);
+  }
+  // Libras: abre o tradutor oficial VLibras e indica o texto a traduzir (libras.js)
+  const libras = document.createElement("button");
+  libras.type = "button";
+  libras.className = "botao-ferramenta botao-libras";
+  libras.innerHTML = `${ICONE_LIBRAS}<span>Libras</span>`;
+  libras.title = "Ver esta resposta em Libras (VLibras)";
+  libras.addEventListener("click", () => window.FiscOnLibras && window.FiscOnLibras.traduzir(partes.balao));
+  ferramentas.appendChild(libras);
   partes.corpo.appendChild(ferramentas);
 
   if (surgir) {
@@ -781,6 +813,8 @@ function removerIndicadorConferencia(partes) {
 async function enviarPergunta(pergunta) {
   if (!pergunta || enviando || !pronto) return;
   enviando = true;
+  const porVoz = Boolean(window.FiscOnVoz && window.FiscOnVoz.consumirPerguntaPorVoz());
+  if (window.FiscOnVoz) window.FiscOnVoz.pararFala();
   const sugestoes = document.getElementById("sugestoes");
   if (sugestoes) sugestoes.remove();
   const boasVindas = areaMensagens.querySelector(".boas-vindas");
@@ -856,6 +890,8 @@ async function enviarPergunta(pergunta) {
       acoes: final.acoes, sugestoes: final.sugestoes, verificacao: final.verificacao,
     };
     finalizarBot(partes, dados, true);
+    // voz.js decide se lê em voz alta (pergunta feita falando / "ler todas as respostas")
+    if (window.FiscOnVoz) window.FiscOnVoz.aoResponder(dados, partes, porVoz);
     if (final.substituida) {
       partes.balao.classList.add("substituida");   // destaque rápido: "esta resposta foi atualizada"
       setTimeout(() => partes.balao.classList.remove("substituida"), 2200);
@@ -977,6 +1013,7 @@ botaoNova.addEventListener("click", () => {
 
 function novaConversa() {
   if (enviando) return;
+  if (window.FiscOnVoz) window.FiscOnVoz.pararFala();
   mensagens = [];
   apagarConversaSalva();
   mostrarBoasVindas();

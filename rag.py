@@ -528,6 +528,9 @@ SOBRE_O_BOT = """\
 - Atualização: visita periodicamente os sites do Sebrae e da Receita Federal (únicas fontes da
   internet aceitas), guarda as páginas e PDFs mais novos e confere cada resposta com eles; se algo
   estiver desatualizado, corrige.
+- Acessibilidade: a pessoa pode perguntar falando (botão do microfone), ouvir as respostas em voz
+  alta (botão "Ouvir" ou menu de acessibilidade) e ver o texto em Libras pelo VLibras, o tradutor
+  oficial do governo (botão "Libras" em cada resposta).
 - Atendimento humano: para casos pessoais ou mais complexos, a pessoa pode agendar atendimento
   presencial ou online com o NAF (Núcleo de Apoio Fiscal) da FMU pelo e-mail naf@fmu.br ou pelo
   formulário que aparece abaixo de cada resposta.

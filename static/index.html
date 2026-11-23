@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Aplica o tema escolhido antes de desenhar a página (evita piscar) -->
   <script>try{var t=localStorage.getItem("chatbot-mei-tema");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
-  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
@@ -58,6 +58,11 @@
             </a>
             <a class="botao botao-secundario" href="#como-funciona">Como funciona</a>
           </div>
+          <ul class="recursos-acesso" aria-label="Recursos de acessibilidade">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>Pergunte falando</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg>Ouça as respostas</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V5.5a1.5 1.5 0 013 0V12"/><path d="M11 11.5v-7a1.5 1.5 0 013 0V12"/><path d="M14 10.5a1.5 1.5 0 013 0V14a6 6 0 01-6 6h-1a6 6 0 01-5.2-3l-2.3-4a1.5 1.5 0 012.6-1.5L8 13"/></svg>Tradução para Libras</li>
+          </ul>
           <div class="rodape-hero">
             <span id="status-servidor" class="pilula-status">Verificando servidor…</span>
           </div>
@@ -332,6 +337,8 @@
       });
     })();
   </script>
-  <script src="tema.js?v=12"></script>
+  <script src="tema.js?v=13"></script>
+  <!-- VLibras: tradutor oficial de Libras do governo federal (ícone flutuante no lado direito) -->
+  <script src="https://vlibras.gov.br/app/vlibras-plugin.js" async></script>
 </body>
 </html>

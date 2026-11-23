@@ -37,6 +37,7 @@ from flask import (Flask, Response, abort, jsonify, request, send_from_directory
 load_dotenv()
 
 app = Flask(__name__, static_folder="static", static_url_path="")
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024   # maior pedido aceito (áudio da voz incluído)
 
 TAMANHO_MAX_PERGUNTA = 1000
 LIMITE_REQUISICOES = 15      # por IP...
@@ -299,6 +300,41 @@ def chat():
 
     return Response(stream_with_context(eventos()), mimetype="application/x-ndjson",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/voz/transcrever")
+def transcrever_voz():
+    """Recebe o áudio gravado no navegador (campo "audio") e devolve {"texto": "..."}."""
+    if estado["erro"]:
+        return jsonify(erro="O chatbot não pôde ser iniciado. Tente novamente mais tarde."), 503
+    if not estado["pronto"]:
+        return jsonify(erro="O chatbot ainda está sendo preparado. Aguarde alguns segundos."), 503
+    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "?").split(",")[0].strip()
+    if _excedeu_limite(f"voz:{ip}"):
+        return jsonify(erro="Muitos áudios em pouco tempo. Aguarde um instante."), 429
+
+    arquivo = request.files.get("audio")
+    if arquivo is None:
+        return jsonify(erro="Nenhum áudio recebido."), 400
+    import voz   # import tardio: o chat funciona mesmo se este módulo der problema
+
+    conteudo = arquivo.read(voz.MAX_BYTES_AUDIO + 1)
+    tipo = arquivo.mimetype or request.form.get("tipo", "")
+    try:
+        texto = voz.transcrever(estado["llm"], conteudo, arquivo.filename or "pergunta", tipo)
+    except voz.ErroVoz as erro:
+        return jsonify(erro=str(erro)), 400
+    except Exception as erro:  # noqa: BLE001
+        print(f"[ERRO] Transcrição: {type(erro).__name__}: {erro}", flush=True)
+        return jsonify(erro=_mensagem_erro_llm(erro)), 502
+    if not texto:
+        return jsonify(erro="Não consegui entender o áudio. Tente falar mais perto do microfone."), 422
+    return jsonify(texto=texto)
+
+
+@app.errorhandler(413)
+def _grande_demais(_erro):
+    return jsonify(erro="O envio ficou grande demais. Tente um áudio mais curto."), 413
 
 
 def _mensagem_erro_llm(erro):

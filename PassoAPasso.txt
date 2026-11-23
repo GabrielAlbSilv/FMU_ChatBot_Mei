@@ -72,3 +72,16 @@
 	  Se algo estiver desatualizado, a resposta é trocada pela versão corrigida, com o aviso "Resposta atualizada".
 	- A conferência usa a cópia local dos sites (instantânea); só vai à internet se a cópia não tiver o assunto.
 	- Para voltar ao comportamento antigo (só mostrar depois de conferir): CONFERENCIA_MODO=antes
+
+14. Voz e Libras (nada a instalar; usa a mesma GROQ_API_KEY):
+	- Falar a pergunta: botão do microfone ao lado da caixa de texto. O navegador grava, para sozinho quando a
+	  pessoa fica em silêncio e envia o áudio para /api/voz/transcrever (Groq Whisper, em português, com
+	  vocabulário de MEI/Receita). Navegador sem gravador usa o reconhecimento de fala dele mesmo.
+	  O microfone só funciona em https (Render) ou em http://localhost.
+	- Ouvir a resposta: botão "Ouvir" em cada resposta (voz do próprio navegador, pt-BR). No menu de
+	  acessibilidade (ícone do bonequinho no topo do chat): ler todas as respostas, responder em voz quando
+	  a pergunta foi falada e a velocidade da voz.
+	- Libras: VLibras, o tradutor oficial do governo (vlibras.gov.br), nas duas páginas (ícone azul à direita).
+	  O botão "Libras" de cada resposta abre o tradutor e destaca a resposta; tocando no texto, o avatar
+	  traduz. Se o site tiver Content-Security-Policy, libere frame-src e font-src para https://vlibras.gov.br
+	  (e font-src para https://cdn.jsdelivr.net).
