@@ -148,7 +148,7 @@ def _reindexar():
     _estado["indice"] = _Indice(passagens)
 
 
-def buscar(consulta, k=4, min_termos=2, limite_chars=V.MAX_CHARS_TRECHO, destaques=(), preferidas=()):
+def buscar(consulta, k=4, min_termos=2, limite_chars=V.MAX_CHARS_TRECHO, destaques=(), preferidas=(), so_urls=None):
     """Melhores páginas da base local para a consulta.
 
     Devolve [{"url","titulo","site","data","tipo","texto","destaque"}] (uma entrada por página, com as
@@ -156,6 +156,7 @@ def buscar(consulta, k=4, min_termos=2, limite_chars=V.MAX_CHARS_TRECHO, destaqu
     destaques: expressões do assunto (verificador.expandir_consulta) — a passagem que traz uma delas
     vale bem mais; "destaque"=True diz que a página trata do assunto e não só repete palavras.
     preferidas: páginas oficiais indicadas para o assunto em fontes_oficiais.json (ganham bônus).
+    so_urls: limita a busca a essas páginas (ex.: as que acabaram de ser lidas ao vivo).
     Páginas de listagem (busca do site, feed, tag...) nunca entram.
     """
     indice = _estado["indice"]
@@ -168,7 +169,7 @@ def buscar(consulta, k=4, min_termos=2, limite_chars=V.MAX_CHARS_TRECHO, destaqu
     melhores = []
     for i, p in pontos.items():
         pas = indice.passagens[i]
-        if acertos[i] < exigido or V.pagina_de_listagem(pas["url"]):
+        if acertos[i] < exigido or V.pagina_de_listagem(pas["url"]) or (so_urls is not None and pas["url"] not in so_urls):
             continue
         bonus = 1.15 if ano in (pas["data"] or "") else 1.0   # conteúdo do ano corrente
         marcas = V.contar_destaques(pas["titulo"] + " " + pas["texto"], destaques)
@@ -223,7 +224,7 @@ def ler_url(url):
         html = V._decodificar(corpo, (cab or {}).get("Content-Type", ""))
         if not html:
             return None
-        titulo, linhas = V.html_para_linhas(html)
+        titulo, linhas = V.completar_portal_sebrae(url, V.html_para_linhas(html))   # portal do Sebrae: JSON do AEM
         return titulo, linhas, html, data_da_pagina(" ".join(linhas))
     except Exception as erro:  # noqa: BLE001
         _log(f"não consegui ler {url}: {type(erro).__name__}")
@@ -299,6 +300,11 @@ def atualizar_agora():
     try:
         simples, regras = _carregar_fontes()
         candidatos = list(simples)
+        try:   # catálogo de endereços (sitemaps): é por ele que qualquer pergunta acha a sua página
+            import pesquisa
+            pesquisa.atualizar_catalogo()
+        except Exception as erro:  # noqa: BLE001
+            _log(f"catálogo de endereços não atualizou: {type(erro).__name__}: {erro}")
         lidos = {}
 
         def visitar(url):
@@ -315,6 +321,11 @@ def atualizar_agora():
                 candidatos.extend(u for u in novos if u not in candidatos)
             if regra["inicio"] not in candidatos:
                 candidatos.insert(0, regra["inicio"])
+        try:   # tudo o que o rastreio encontrou também entra no catálogo (mesmo além do limite de páginas)
+            import pesquisa
+            pesquisa.adicionar_ao_catalogo(candidatos)
+        except Exception:  # noqa: BLE001
+            pass
         candidatos = candidatos[:MAX_PAGINAS]
 
         # 2) lê o que falta (em paralelo, poucos de cada vez para não sobrecarregar os sites)
@@ -387,6 +398,8 @@ def salvar():
         tmp = ARQ_BASE.with_suffix(".tmp")
         tmp.write_text(json.dumps(dados, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, ARQ_BASE)
+        import pesquisa
+        pesquisa.salvar_catalogo(PASTA)
     except OSError as erro:
         _log(f"não consegui salvar a base web: {erro}")
 
@@ -403,6 +416,11 @@ def carregar():
         _estado["atualizada_em"] = dados.get("atualizada_em")
         _estado["pdfs_novos"] = dados.get("pdfs_novos") or []
         _reindexar()
+    try:
+        import pesquisa
+        pesquisa.carregar_catalogo(PASTA)
+    except Exception as erro:  # noqa: BLE001
+        _log(f"catálogo de endereços não carregou: {type(erro).__name__}")
     _log(f"base carregada do disco: {len(_estado['paginas'])} páginas (coleta de {_estado['atualizada_em']})")
     return True
 
@@ -419,7 +437,15 @@ def status():
             "atualizada_em": _estado["atualizada_em"], "rodando": _estado["rodando"],
             "proxima": _estado["proxima"], "ultimo_erro": _estado["ultimo_erro"],
             "pdfs_novos": _estado["pdfs_novos"], "ultima_coleta": _estado["ultima_coleta"],
-            "intervalo_horas": INTERVALO_HORAS}
+            "intervalo_horas": INTERVALO_HORAS, "catalogo": _status_catalogo()}
+
+
+def _status_catalogo():
+    try:
+        import pesquisa
+        return pesquisa.status_catalogo()
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def _ciclo():

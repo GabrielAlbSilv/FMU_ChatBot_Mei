@@ -33,7 +33,9 @@ from pathlib import Path
 ATIVO = os.getenv("VERIFICAR_SITES", "1") != "0"
 # Usa um buscador (DuckDuckGo) APENAS para descobrir endereços dentro dos sites permitidos.
 # Nada do buscador é usado como fonte: só as páginas que passam em url_permitida().
-BUSCA_DESCOBERTA = os.getenv("VERIFICAR_BUSCA_DESCOBERTA", "1") != "0"
+# Desligado por padrão: o DuckDuckGo bloqueia servidores (anti-robô) e só gastava tempo. A descoberta
+# de páginas para qualquer pergunta agora é feita por pesquisa.py (sitemaps + busca interna dos sites).
+BUSCA_DESCOBERTA = os.getenv("VERIFICAR_BUSCA_DESCOBERTA", "0") != "0"
 
 # (domínio, prefixo de caminho obrigatório). O gov.br é um portal de TODO o governo, por isso
 # só o caminho /receitafederal é aceito (não vale gov.br/fazenda, gov.br/mei etc.).
@@ -291,6 +293,50 @@ def extrair_trecho(html, consulta, limite=MAX_CHARS_TRECHO):
     return titulo, selecionar_trechos(linhas, consulta, limite)
 
 
+def _eh_portal_sebrae(url):
+    host = (urllib.parse.urlsplit(str(url)).hostname or "").lower()
+    return host in ("sebrae.com.br", "www.sebrae.com.br")
+
+
+def _textos_aem(no, saida, dentro=False):
+    """Junta os textos dos 'content fragments' do JSON do AEM (onde fica o corpo dos artigos)."""
+    if isinstance(no, dict):
+        for chave, valor in no.items():
+            marca = dentro or "contentfragment" in str(chave).lower() or chave in ("text", "texto")
+            if chave in ("textParagraphs", "iconSvg", "redirect", "url"):
+                continue
+            _textos_aem(valor, saida, marca)
+    elif isinstance(no, list):
+        for item in no:
+            _textos_aem(item, saida, dentro)
+    elif isinstance(no, str) and dentro and len(no) > 80 and "<svg" not in no:
+        saida.append(no)
+
+
+def completar_portal_sebrae(url, doc):
+    """As páginas do portal do Sebrae (Adobe AEM) montam o artigo por JavaScript: o HTML só traz o
+    resumo. Quando o texto vem curto, lê o mesmo conteúdo em `<página>.model.json` (mesmo site)."""
+    titulo, linhas = doc
+    if not _eh_portal_sebrae(url) or sum(len(l) for l in linhas) > 800:
+        return doc
+    endereco = url.split("?")[0].rstrip("/")
+    if endereco.endswith(".html"):
+        endereco = endereco[:-5]
+    codigo, corpo, _ = baixar(endereco + ".model.json", aceitar=("json",), max_bytes=MAX_BYTES_PAGINA)
+    if codigo != 200 or not corpo:
+        return doc
+    try:
+        dados = json.loads(corpo.decode("utf-8", "replace"))
+    except ValueError:
+        return doc
+    textos = []
+    _textos_aem(dados, textos)
+    if not textos:
+        return doc
+    _, extras = html_para_linhas("<div>" + "</div><div>".join(dict.fromkeys(textos)) + "</div>")
+    return titulo, list(dict.fromkeys(linhas + extras))
+
+
 def ler_documento(url):
     """Baixa e converte (com cache) uma página HTML ou PDF PERMITIDA -> (título, linhas) ou None."""
     agora = time.time()
@@ -306,7 +352,7 @@ def ler_documento(url):
                 doc = pdf_para_linhas(corpo)
             else:
                 html = _decodificar(corpo, (cab or {}).get("Content-Type", ""))
-                doc = html_para_linhas(html) if html else None
+                doc = completar_portal_sebrae(url, html_para_linhas(html)) if html else None
         except Exception as erro:  # noqa: BLE001  (PDF corrompido, pypdf ausente...)
             _log(f"não consegui ler {url}: {type(erro).__name__}")
     with _trava_cache:
@@ -386,6 +432,11 @@ def descobrir_urls(consulta, busca=None):
     `busca` é a pergunta curta do usuário: o buscador responde mal a consultas longas cheias de sinônimos.
     """
     urls = [u for u in urls_das_sementes(consulta) if not pagina_de_listagem(u)]
+    try:   # catálogo dos sitemaps + busca interna dos sites: funciona para qualquer assunto
+        import pesquisa
+        urls.extend(u for u in pesquisa.descobrir(busca or consulta, consulta) if u not in urls)
+    except Exception as erro:  # noqa: BLE001
+        _log(f"pesquisa geral indisponível: {type(erro).__name__}: {erro}")
     if BUSCA_DESCOBERTA:
         termo = (busca or consulta)[:200]
         filtros = ("sebrae.com.br", "gov.br/receitafederal", "receita.fazenda.gov.br")
@@ -476,7 +527,7 @@ def contar_destaques(texto, destaques):
 
 
 # Páginas de listagem não respondem nada: busca do site, feeds, tags, categorias, autores, paginação.
-_LISTAGEM = re.compile(r"[?&](s|q|busca|search|termo)=|/feed/?$|/(tag|tags|category|categoria|author|autor)/|"
+_LISTAGEM = re.compile(r"[?&](s|q|busca|search|termo|SearchableText)=|/search\?|/feed/?$|/(tag|tags|category|categoria|author|autor)/|"
                        r"/page/\d+|wp-json|/comments?/|/@@search|/busca/?$", re.I)
 
 
@@ -693,6 +744,13 @@ def verificar(cliente, modelo, opcoes, pergunta, consulta_busca, rascunho, trech
     except Exception as erro:  # noqa: BLE001
         _log(f"coleta falhou: {type(erro).__name__}: {erro}")
         return base
+    try:
+        # Agora que existe o rascunho, procura pelos termos DELE (qualquer assunto) e fica só com as
+        # páginas que tratam do assunto; se faltar, descobre e lê páginas oficiais na hora.
+        import pesquisa
+        trechos_web = pesquisa.reforcar(trechos_web, pergunta, consulta_busca, rascunho)
+    except Exception as erro:  # noqa: BLE001
+        _log(f"reforço da pesquisa falhou: {type(erro).__name__}: {erro}")
     if trechos_web and all(t.get("origem") == "base_local" for t in trechos_web):
         # páginas da cópia local: a data mostrada é a da coleta, não a de hoje
         try:

@@ -20,6 +20,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pergunta")
     ap.add_argument("--llm", action="store_true", help="roda também a comparação com o modelo (Groq)")
+    ap.add_argument("--rascunho", default="", help="resposta do bot (a conferência procura pelos termos dela)")
     args = ap.parse_args()
 
     print(f"== Conferência ligada (VERIFICAR_SITES): {V.ATIVO} | buscador de endereços: {V.BUSCA_DESCOBERTA}\n")
@@ -33,8 +34,12 @@ def main():
         base_web.carregar()
     except Exception as erro:  # noqa: BLE001
         print(f"   base local indisponível: {erro}")
-    for i, t in enumerate(V.coletar_trechos(args.pergunta, args.pergunta), 1):
-        print(f"   [W{i}] {'SOBRE O ASSUNTO' if t.get('destaque') else 'genérica      '} {t['url']}")
+    import pesquisa
+    trechos = V.coletar_trechos(args.pergunta, args.pergunta)
+    print(f"   catálogo de endereços: {pesquisa.status_catalogo()}")
+    trechos = pesquisa.reforcar(trechos, args.pergunta, args.pergunta, args.rascunho or args.pergunta)
+    for i, t in enumerate(trechos, 1):
+        print(f"   [W{i}] {t.get('relevancia', 0):.2f} {'SOBRE O ASSUNTO' if t.get('destaque') else 'genérica      '} {t['url']}")
         print(f"        {t['texto'][:200].replace(chr(10), ' ')}")
     print()
 

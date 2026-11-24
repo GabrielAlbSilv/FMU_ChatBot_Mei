@@ -298,5 +298,49 @@
       "seguir": "blog\\.rn\\.sebrae\\.com\\.br/.*(mei|simples|imposto|das-|dasn|cnpj)",
       "max": 10
     }
+  ],
+  "_aviso_pesquisa": "Pesquisa geral (pesquisa.py), para QUALQUER pergunta: 'sitemaps' e 'paginas_de_links' formam o catálogo de endereços (atualizado a cada coleta); 'buscas' são as buscas internas dos sites ({q} = palavras da pergunta). Só endereços do Sebrae e da Receita Federal são aceitos.",
+  "sitemaps": [
+    {
+      "url": "https://sebrae.com.br/sitemap.xml",
+      "filtro": "guiaparaomei|subsites/mei|empreendedores/conteudos"
+    },
+    {
+      "url": "https://blog.rn.sebrae.com.br/wp-sitemap.xml",
+      "seguir": "post-sitemap|page-sitemap"
+    },
+    {
+      "url": "https://www.gov.br/receitafederal/sitemap.xml",
+      "filtro": "/receitafederal/pt-br/"
+    }
+  ],
+  "paginas_de_links": [
+    {
+      "url": "https://www.gov.br/receitafederal/pt-br/assuntos",
+      "seguir": "/receitafederal/pt-br/(assuntos|servicos)/"
+    },
+    {
+      "url": "https://www.gov.br/receitafederal/pt-br/servicos",
+      "seguir": "/receitafederal/pt-br/(assuntos|servicos)/"
+    },
+    {
+      "url": "https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/cadastros",
+      "seguir": "/receitafederal/pt-br/(assuntos|servicos)/"
+    },
+    {
+      "url": "https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/perguntas-frequentes",
+      "seguir": "/receitafederal/pt-br/acesso-a-informacao/perguntas-frequentes/"
+    },
+    {
+      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/",
+      "seguir": "SimplesNacional/"
+    }
+  ],
+  "buscas": [
+    {
+      "nome": "Blog do Sebrae RN",
+      "url": "https://blog.rn.sebrae.com.br/wp-json/wp/v2/search?per_page=6&search={q}",
+      "tipo": "wp-json"
+    }
   ]
 }

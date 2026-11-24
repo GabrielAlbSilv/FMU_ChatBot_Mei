@@ -106,10 +106,20 @@
 	- Na tela, o menu "Detalhes da resposta" mostra o selo "Cálculo pelas regras oficiais de <ano>" com o
 	  resumo do cálculo e o link da fonte.
 
-16. Conferência com os sites em perguntas básicas ("Quem pode ser MEI?", "O MEI pode ter empregado?"):
-	- A busca nas páginas oficiais agora parte do ASSUNTO da pergunta (verificador.py, _INTENCOES): "quem pode ser
-	  MEI" procura requisitos/condições/atividade permitida, e não só a palavra "MEI". Para incluir um assunto novo,
-	  acrescente uma linha em _INTENCOES e, se houver, a página oficial certa em fontes_oficiais.json ("paginas").
-	- A cópia local dos sites só é usada se tiver página que trate do assunto; senão, as páginas oficiais do
-	  assunto são lidas na hora. Páginas de busca, feed, tag e categoria dos sites não entram mais na base.
-	- Para ver o que a conferência escolhe para uma pergunta:  python diagnosticar_verificacao.py "Quem pode ser MEI?"
+16. Pesquisa nos sites oficiais para QUALQUER pergunta (pesquisa.py):
+	- Por que mudou: o DuckDuckGo bloqueia o servidor (anti-robô); sem ele, só eram achadas as páginas já listadas em
+	  fontes_oficiais.json, e a conferência dizia "nenhuma trata diretamente deste ponto" para quase tudo.
+	- Agora, sem depender de buscador externo nem de lista de perguntas:
+	    1. Catálogo de endereços: a cada coleta, o servidor lê os sitemaps do Sebrae, do blog do Sebrae RN e da Receita
+	       Federal e os menus da Receita/Simples Nacional (fontes_oficiais.json: "sitemaps" e "paginas_de_links").
+	       São ~1.200 endereços com título; o estado aparece em /api/status ("base_web" > "catalogo").
+	    2. Busca interna do blog do Sebrae RN ("buscas"), com as palavras da pergunta.
+	    3. Depois que a resposta é escrita, a conferência procura as páginas pelos termos DA RESPOSTA (ex.: "sócio",
+	       "atividade permitida") e pelo título (ex.: .../como-funciona-o-mei-caminhoneiro), lê as que faltam na hora e
+	       guarda na cópia local (a próxima pergunta parecida já é instantânea).
+	    4. Só vão para a comparação as páginas que tratam do assunto (palavras raras da pergunta valem mais que "MEI").
+	  As páginas do portal do Sebrae, que montam o texto por JavaScript, são lidas pelo JSON do próprio site.
+	- Ver o que a conferência escolhe para uma pergunta (com a resposta do bot, opcional):
+	    python diagnosticar_verificacao.py "Posso pegar empréstimo como MEI?" --rascunho "O MEI pode pedir crédito..."
+	- Ajustes (.env): PESQUISA_ATIVA=0 desliga; PESQUISA_LIMIAR=0.5 (rigor para "trata do assunto").
+	  VERIFICAR_BUSCA_DESCOBERTA=1 religa o DuckDuckGo (padrão agora é 0, porque ele bloqueia servidores).
