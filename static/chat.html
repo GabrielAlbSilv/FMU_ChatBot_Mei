@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Aplica o tema escolhido antes de desenhar a página (evita piscar) -->
   <script>try{var t=localStorage.getItem("chatbot-mei-tema");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
-  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body class="pagina-chat">
 
@@ -91,7 +91,7 @@
 
         <div class="pa-grupo">
           <span class="pa-titulo">Libras</span>
-          <button id="abrir-libras" type="button" class="pa-botao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V5.5a1.5 1.5 0 013 0V12"/><path d="M11 11.5v-7a1.5 1.5 0 013 0V12"/><path d="M14 10.5a1.5 1.5 0 013 0V14a6 6 0 01-6 6h-1a6 6 0 01-5.2-3l-2.3-4a1.5 1.5 0 012.6-1.5L8 13"/></svg>Abrir o tradutor de Libras (VLibras)</button>
+          <button id="abrir-libras" type="button" class="pa-botao vlibras-links"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V5.5a1.5 1.5 0 013 0V12"/><path d="M11 11.5v-7a1.5 1.5 0 013 0V12"/><path d="M14 10.5a1.5 1.5 0 013 0V14a6 6 0 01-6 6h-1a6 6 0 01-5.2-3l-2.3-4a1.5 1.5 0 012.6-1.5L8 13"/></svg>Abrir o tradutor de Libras (VLibras)</button>
           <p class="pa-nota">Com o tradutor aberto, toque em qualquer texto para vê-lo em Libras. Em cada resposta há também o botão “Libras”.</p>
         </div>
       </div>
@@ -150,9 +150,9 @@
   </dialog>
 
   <script src="tema.js?v=14"></script>
-  <script src="script.js?v=14"></script>
+  <script src="script.js?v=15"></script>
   <script src="voz.js?v=14"></script>
-  <script src="libras.js?v=14"></script>
+  <script src="libras.js?v=17"></script>
   <!-- VLibras: tradutor oficial de Libras do governo federal (ícone flutuante no lado direito) -->
   <script src="https://vlibras.gov.br/app/vlibras-plugin.js" async></script>
 </body>

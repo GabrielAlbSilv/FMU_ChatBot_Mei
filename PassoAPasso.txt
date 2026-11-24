@@ -82,9 +82,15 @@
 	  acessibilidade (ícone do bonequinho no topo do chat): ler todas as respostas, responder em voz quando
 	  a pergunta foi falada e a velocidade da voz.
 	- Libras: VLibras, o tradutor oficial do governo (vlibras.gov.br), nas duas páginas (ícone azul à direita).
-	  O botão "Libras" de cada resposta abre o tradutor e destaca a resposta; tocando no texto, o avatar
-	  traduz. Se o site tiver Content-Security-Policy, libere frame-src e font-src para https://vlibras.gov.br
-	  (e font-src para https://cdn.jsdelivr.net).
+	  O botão "Libras" de cada resposta abre o tradutor e já traduz aquela resposta (o avatar sinaliza na hora;
+	  na 1ª vez o avatar 3D é baixado e pode levar até ~1 min em conexão lenta). Com o tradutor aberto, tocar em
+	  qualquer texto da página também traduz.
+	  Técnico (static/libras.js): usa a API do VLibras 7.x — VLibrasWidget.open() e vlibras.translateAndPlay().
+	  As versões antigas do widget usavam [vw-access-button]/[vw-plugin-wrapper], que não existem mais; por isso
+	  o botão dizia que o tradutor "não carregou". Botões com a classe "vlibras-links" funcionam normalmente com o
+	  tradutor aberto (sem ela, o VLibras intercepta o clique para traduzir o rótulo do botão).
+	  Se o site tiver Content-Security-Policy, libere script-src, frame-src, connect-src, img-src e font-src para
+	  https://vlibras.gov.br (e font-src para https://cdn.jsdelivr.net).
 
 15. Regras fiscais por ano-calendário (contas feitas pelo código, não pela IA):
 	- regras_fiscais.json guarda, por ano, os valores oficiais: teto e limite proporcional do MEI, salário mínimo,

@@ -912,3 +912,7 @@ html .revelar.visivel { opacity: 1; transform: none; }
   .det-resumo { order: 3; width: 100%; padding-left: 23px; }
   .det-resumo:empty { display: none; }
 }
+
+/* VLibras: botões marcados com "vlibras-links" funcionam normalmente com o tradutor aberto. O clique
+   precisa cair no próprio botão (e não no ícone/rótulo dentro dele), senão o VLibras o intercepta. */
+.vlibras-links * { pointer-events: none; }

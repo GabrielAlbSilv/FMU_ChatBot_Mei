@@ -632,7 +632,9 @@ function finalizarBot(partes, dados, surgir = false) {
   // Libras: abre o tradutor oficial VLibras e indica o texto a traduzir (libras.js)
   const libras = document.createElement("button");
   libras.type = "button";
-  libras.className = "botao-ferramenta botao-libras";
+  // "vlibras-links": com o tradutor aberto, o VLibras intercepta cliques em botões (traduz o rótulo e pede
+  // confirmação). Este botão precisa funcionar normalmente: é ele que manda a resposta para o tradutor.
+  libras.className = "botao-ferramenta botao-libras vlibras-links";
   libras.innerHTML = `${ICONE_LIBRAS}<span>Libras</span>`;
   libras.title = "Ver esta resposta em Libras (VLibras)";
   libras.addEventListener("click", () => window.FiscOnLibras && window.FiscOnLibras.traduzir(partes.balao));
