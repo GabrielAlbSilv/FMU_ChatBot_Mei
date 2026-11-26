@@ -9,7 +9,27 @@
       "baixado_em": "2026-11-23T09:10:15-03:00",
       "etag": "",
       "last_modified": ""
+    },
+    "8-Exclusao_SimplesNacional_2026.pdf": {
+      "titulo": "Exclusão do Simples Nacional 2026 — Perguntas e Respostas (inclui MEI)",
+      "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/marco/receita-federal-emite-termo-de-exclusao-para-devedores-do-simples-nacional-incluindo-mei/perguntas-e-respostas-contribuinte-2026.pdf",
+      "sha256": "0a4675a56cf224b7f4d35aa3dab95ac06baf17d09365ff244c440561a79ad937",
+      "paginas": 6,
+      "bytes": 337081,
+      "baixado_em": "2026-11-26T16:05:18-03:00",
+      "etag": "",
+      "last_modified": ""
+    },
+    "15-Roteiro_Opcao_SimplesNacional_2027.pdf": {
+      "titulo": "Roteiro da Opção pelo Simples Nacional para 2027 (Comitê Gestor, publicado em ago/2026)",
+      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/Roteiro%20da%20op%C3%A7%C3%A3o%20pelo%20Simles%20Nacional%20para%20o%20ano%20de%202027.pdf",
+      "sha256": "e3f6cf25c5168aad6cade0dd0cf8608955fc96151a5cad07aee6d0586eaae946",
+      "paginas": 10,
+      "bytes": 334505,
+      "baixado_em": "2026-11-26T16:05:20-03:00",
+      "etag": "\"cdb935fb9f56dd1:0\"",
+      "last_modified": "Wed, 07 Oct 2026 21:08:20 GMT"
     }
   },
-  "atualizado_em": "2026-11-23T09:10:15-03:00"
+  "atualizado_em": "2026-11-26T16:05:20-03:00"
 }
