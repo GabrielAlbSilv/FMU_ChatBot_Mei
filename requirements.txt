@@ -4,7 +4,7 @@ flask>=3.0,<4
 gunicorn>=23.0,<25
 python-dotenv>=1.0,<2
 fastembed>=0.7.3,<0.9
-numpy>=1.26,<3
+numpy>=2.5.5,<3
 pypdf>=5.0,<7
 groq>=1.0,<2
 # Banco de dados opcional (DATABASE_URL). Só é usado se a variável existir.
