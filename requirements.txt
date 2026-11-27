@@ -1,7 +1,7 @@
 # Versões com faixa: aceita correções e melhorias menores, mas não uma versão "maior" nova, que pode
 # quebrar o deploy sem aviso. Para atualizar uma faixa: mude aqui, rode  python testes.py  e publique.
 flask>=3.0,<4
-gunicorn>=23.0,<25
+gunicorn>=27.0.1,<28
 python-dotenv>=1.0,<2
 fastembed>=0.7.3,<0.9
 numpy>=1.26,<3
