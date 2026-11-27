@@ -1,5 +1,17 @@
 # Mudanças
 
+## v14 — operação e portfólio (27/11/2026)
+- **Modelo reserva:** com erro 429 da Groq, a resposta sai pelo `MODELO_RESERVA` (padrão `openai/gpt-oss-20b`),
+  que é usado direto por `PAUSA_RESERVA_S` segundos; a métrica `modelo_reserva` mostra quantas vezes aconteceu.
+- **Banco PostgreSQL opcional** (`banco.py`, `DATABASE_URL`): respostas, votos e avaliações guardados entre
+  reinícios, gravados em segundo plano; retenção de 180 dias (LGPD). Guia: `docs/BANCO.md`.
+- **Painel de qualidade** `/painel` (senha `STATUS_TOKEN`): aprovação, gráfico por dia, respostas "Não ajudou"
+  e histórico das avaliações.
+- **Avaliação semanal** (`avaliacao-semanal.yml`) com a Groq de verdade; falhas abrem/atualizam uma issue.
+- **Dependabot** para bibliotecas e ações; ações do GitHub na versão Node 24 (sem o aviso do Node 20).
+- README com badges, capturas de tela e números; exemplo da página inicial com a regra de empregados de 2027.
+- 118 → 128 testes.
+
 ## v13 — LC 238/2026, segurança e qualidade (27/11/2026)
 
 **Informação**

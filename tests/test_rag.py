@@ -372,3 +372,69 @@ class Melhorias(unittest.TestCase):
         self.assertTrue(self.busca.pergunta_sobre_ir("como corrigir o IRPF"))
         self.assertFalse(self.busca.pergunta_sobre_ir("O MEI paga imposto de renda?"))
         self.assertFalse(self.busca.pergunta_sobre_ir("quanto custa o DAS"))
+
+
+class ModeloReserva(unittest.TestCase):
+    """Limite de uso da Groq (429): a resposta sai pelo MODELO_RESERVA em vez de dar erro."""
+
+    @classmethod
+    def setUpClass(cls):
+        import rag
+        cls.rag = rag
+
+    def setUp(self):
+        self.rag._cache.clear()
+        self.rag._reserva_ate[0] = 0.0
+        self.addCleanup(lambda: self.rag._reserva_ate.__setitem__(0, 0.0))
+        self.indice = types.SimpleNamespace(buscar_varias=lambda consultas, k=8: [
+            {"fonte": "4-Perguntas&Respostas3_MEI.pdf", "pagina": 7, "texto": "A DASN-SIMEI vence em 31 de maio."}])
+        for p in (mock.patch.object(self.rag, "trechos_da_web", return_value=[]),
+                  mock.patch.object(self.rag.verificador, "ATIVO", False),
+                  mock.patch.object(self.rag, "MODELO_RESERVA", "modelo-reserva")):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def _cliente(self, chamadas, sem_limite=()):
+        def criar(**k):
+            chamadas.append(k["model"])
+            if k.get("stream"):
+                if k["model"] not in sem_limite:
+                    erro = RuntimeError("Rate limit reached")
+                    erro.status_code = 429
+                    raise erro
+                return iter([types.SimpleNamespace(choices=[types.SimpleNamespace(
+                    delta=types.SimpleNamespace(content="A DASN-SIMEI vence em 31 de maio [1]."))])])
+            return Resposta("consulta")
+        return types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=criar)))
+
+    def test_429_usa_o_reserva_e_lembra_por_um_tempo(self):
+        chamadas = []
+        cliente = self._cliente(chamadas, sem_limite=("modelo-reserva",))
+        fim = list(self.rag.responder_stream(self.indice, cliente, "Até quando entrego a DASN?", []))[-1][1]
+        self.assertTrue(fim["modelo_reserva"])
+        self.assertIn("31 de maio", fim["resposta"])
+        self.assertEqual(chamadas[-2:], [self.rag.MODELO_LLM, "modelo-reserva"])
+        chamadas.clear()
+        list(self.rag.responder_stream(self.indice, cliente, "E a multa da DASN?", []))
+        self.assertNotIn(self.rag.MODELO_LLM, chamadas[1:])          # na pausa, vai direto ao reserva
+        self.rag._reserva_ate[0] = 0.0                                # pausa acabou: tenta o principal de novo
+        chamadas.clear()
+        list(self.rag.responder_stream(self.indice, cliente, "E se eu atrasar a DASN?", []))
+        self.assertEqual(chamadas[1], self.rag.MODELO_LLM)
+
+    def test_reserva_tambem_no_limite_mostra_o_erro(self):
+        with self.assertRaises(RuntimeError):
+            list(self.rag.responder_stream(self.indice, self._cliente([]), "Até quando entrego a DASN?", []))
+
+    def test_outro_erro_nao_troca_de_modelo(self):
+        chamadas = []
+
+        def criar(**k):
+            chamadas.append(k["model"])
+            if k.get("stream"):
+                raise RuntimeError("erro de conexão")
+            return Resposta("consulta")
+        cliente = types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=criar)))
+        with self.assertRaises(RuntimeError):
+            list(self.rag.responder_stream(self.indice, cliente, "Até quando entrego a DASN?", []))
+        self.assertNotIn("modelo-reserva", chamadas)

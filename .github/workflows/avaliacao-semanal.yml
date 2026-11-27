@@ -1,0 +1,121 @@
+# Avaliação semanal com a Groq DE VERDADE: roda o avaliar_casos.py (casos do relatório do NAF + LC 238/2026)
+# e, se algum caso falhar, abre (ou atualiza) uma issue "Avaliação semanal com falhas" com o relatório.
+# Serve para descobrir na hora se uma mudança no modelo da Groq, nos PDFs ou no código piorou as respostas.
+#
+# Requisitos (Settings > Secrets and variables > Actions > Repository secrets):
+#   - GROQ_API_KEY  (a mesma do Render)   — obrigatório; sem ele o workflow só avisa e termina
+#   - DATABASE_URL  (opcional)            — grava o resultado no banco; aparece no /painel
+# Custo: ~25 perguntas por rodada na cota da Groq (roda de madrugada para não disputar com os usuários).
+# Também dá para rodar na mão: aba Actions > "Avaliação semanal" > Run workflow.
+name: Avaliação semanal
+
+on:
+  schedule:
+    - cron: "41 6 * * 1"        # toda segunda, 03:41 no horário de Brasília (06:41 UTC)
+  workflow_dispatch:
+    inputs:
+      sites:
+        description: "Conferir também com os sites do Sebrae e da Receita (mais lento, gasta mais cota)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: avaliacao-semanal
+  cancel-in-progress: false
+
+jobs:
+  avaliar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ORIGEM_AVALIACAO: ${{ github.event_name == 'schedule' && 'semanal' || 'manual (Actions)' }}
+    steps:
+      - name: Conferir o segredo da Groq
+        if: env.GROQ_API_KEY == ''
+        run: echo "::warning::Crie o secret GROQ_API_KEY em Settings > Secrets and variables > Actions para ativar a avaliação."
+
+      - uses: actions/checkout@v5
+        if: env.GROQ_API_KEY != ''
+
+      - uses: actions/setup-python@v6
+        if: env.GROQ_API_KEY != ''
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Reaproveitar o modelo de embeddings baixado
+        if: env.GROQ_API_KEY != ''
+        uses: actions/cache@v5
+        with:
+          path: modelo_cache
+          key: embeddings-${{ hashFiles('busca.py', 'config.py') }}
+
+      - name: Instalar dependências
+        if: env.GROQ_API_KEY != ''
+        run: pip install -r requirements.txt
+
+      - name: Montar o índice dos PDFs
+        if: env.GROQ_API_KEY != ''
+        env:
+          ATUALIZAR_PDFS_NO_BUILD: "0"     # avalia os PDFs que estão no repositório
+          COLETAR_WEB_NO_BUILD: "0"
+        run: python preparar_base.py
+
+      - name: Rodar a avaliação
+        id: avaliar
+        if: env.GROQ_API_KEY != ''
+        continue-on-error: true
+        env:
+          BASE_WEB_ATIVA: "0"
+        run: python avaliar_casos.py ${{ (github.event_name == 'workflow_dispatch' && inputs.sites) && '' || '--sem-sites' }}
+
+      - name: Guardar o relatório (aba Summary > Artifacts)
+        if: always() && env.GROQ_API_KEY != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: relatorio-avaliacao
+          path: |
+            relatorio_reteste.md
+            relatorios/historico_avaliacoes.jsonl
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Resumo na página da execução
+        if: always() && env.GROQ_API_KEY != ''
+        run: |
+          if [ -f relatorio_reteste.md ]; then
+            sed -n '1,/^---$/p' relatorio_reteste.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Abrir ou atualizar a issue de falhas
+        if: steps.avaliar.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          titulo="Avaliação semanal com falhas"
+          corpo=$(mktemp)
+          {
+            echo "A avaliação de $(date +%d/%m/%Y) encontrou respostas erradas."
+            echo "Execução: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo
+            if [ -f relatorio_reteste.md ]; then sed -n '1,/^---$/p' relatorio_reteste.md; else echo "O script falhou antes de gerar o relatório (veja o log)."; fi
+          } > "$corpo"
+          gh label create avaliacao-semanal --color B60205 --description "Falhas da avaliação semanal" 2>/dev/null || true
+          numero=$(gh issue list --label avaliacao-semanal --state open --json number --jq '.[0].number')
+          if [ -n "$numero" ]; then
+            gh issue comment "$numero" --body-file "$corpo"
+          else
+            gh issue create --title "$titulo" --label avaliacao-semanal --body-file "$corpo"
+          fi
+
+      - name: Marcar a execução como falha
+        if: steps.avaliar.outcome == 'failure'
+        run: exit 1

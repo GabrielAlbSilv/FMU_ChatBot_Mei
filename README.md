@@ -1,11 +1,34 @@
 # FiscOn — Chatbot MEI e Receita Federal (FMU · NAF)
 
+[![Testes](https://github.com/GabrielAlbSilv/FMU_ChatBot_Mei/actions/workflows/testes.yml/badge.svg)](https://github.com/GabrielAlbSilv/FMU_ChatBot_Mei/actions/workflows/testes.yml)
+[![Avaliação semanal](https://github.com/GabrielAlbSilv/FMU_ChatBot_Mei/actions/workflows/avaliacao-semanal.yml/badge.svg)](https://github.com/GabrielAlbSilv/FMU_ChatBot_Mei/actions/workflows/avaliacao-semanal.yml)
+[![Base de PDFs](https://github.com/GabrielAlbSilv/FMU_ChatBot_Mei/actions/workflows/atualizar-base.yml/badge.svg)](https://github.com/GabrielAlbSilv/FMU_ChatBot_Mei/actions/workflows/atualizar-base.yml)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
+
 Assistente virtual que tira dúvidas sobre **MEI** (DAS, DASN-SIMEI, limites, desenquadramento, empregados,
 baixa) e **Receita Federal** (IRPF, CPF/CNPJ, Simples Nacional), feito para o **NAF — Núcleo de Apoio Fiscal
 da FMU**. Responde com base em documentos oficiais, confere a resposta com os sites do **Sebrae** e da
 **Receita Federal**, e tem acessibilidade com **voz** (pergunta falada e leitura da resposta) e **Libras** (VLibras).
 
 > Demo: _coloque aqui o link do serviço no Render_
+
+<p align="center">
+  <img src="docs/img/inicio.png" alt="Página inicial do FiscOn" width="62%">
+  <img src="docs/img/chat-celular.png" alt="Chat do FiscOn no celular" width="22%">
+</p>
+
+## Em números
+
+| Número | O que significa |
+|---|---|
+| **128** testes automatizados | rodam a cada push e antes de publicar PDFs novos (sem internet e sem custo de IA) |
+| **18** casos reais de avaliação | erros encontrados pelo NAF + Lei Complementar 238/2026, rodados toda semana com o modelo de verdade |
+| **10** regras fiscais calculadas por código | DAS, teto, limite proporcional, excesso de faturamento, IRPF, DASN, DIRF, empregados, perdão de dívidas |
+| **2** fontes oficiais aceitas | Sebrae e Receita Federal — lista fechada, validada a cada redirecionamento |
+| **0** dados pessoais guardados | CPF, CNPJ, e-mail e telefone são mascarados antes de logs, IA e banco |
+
+A aprovação dos usuários (botões Útil / Não ajudou) e a taxa de respostas corrigidas são acompanhadas no
+painel de qualidade (`/painel`).
 
 ## Decisões de projeto
 
@@ -16,7 +39,10 @@ da FMU**. Responde com base em documentos oficiais, confere a resposta com os si
 | Lei nova que ainda depende de orçamento (LC 238/2026) | O teto novo fica cadastrado como `"vigente": false`: o bot usa a regra em vigor e **mostra os dois cenários** quando a conclusão muda. |
 | A IA ajuda a entender a pergunta, mas pode inventar dados | A reescrita da pergunta devolve um JSON com dados sugeridos; **o código só aceita o que confirma no texto do usuário** (`validar_dados_llm`). |
 | Plano gratuito (512 MB, CPU fracionada) | Sem LangChain/Chroma: embeddings ONNX (`fastembed`) + BM25 próprio em numpy, índice gerado no build. |
-| LGPD | CPF, CNPJ, e-mail e telefone são **mascarados antes** de logs, cache e da Groq (`privacidade.py`). |
+| LGPD | CPF, CNPJ, e-mail e telefone são **mascarados antes** de logs, cache, banco e da Groq (`privacidade.py`); perguntas guardadas por no máximo 180 dias. |
+| Plano gratuito da Groq tem limite por minuto | Ao receber erro 429, a resposta sai por um **modelo reserva** (cada modelo tem a sua própria cota) em vez de mostrar erro. |
+| O disco do Render gratuito é apagado a cada reinício | Métricas, votos e avaliações vão para um **PostgreSQL gratuito (Neon)**, gravados em segundo plano: o chat nunca espera o banco. |
+| Como saber se uma mudança piorou o bot? | **Avaliação semanal** com o modelo de verdade no GitHub Actions; se algum caso falhar, abre uma *issue* automaticamente. |
 
 ## Como funciona
 
@@ -61,6 +87,17 @@ python testes.py RegrasFiscais           # só os que têm "RegrasFiscais" no no
 ```
 
 Rodam no GitHub Actions a cada push/PR (`.github/workflows/testes.yml`) e antes de publicar PDFs novos.
+O banco é testado com SQLite (mesmo SQL), sem precisar de servidor.
+
+Automação no GitHub (`.github/`):
+
+| Workflow | Quando | O que faz |
+|---|---|---|
+| `testes.yml` | todo push/PR | testes offline |
+| `atualizar-base.yml` | todo dia | baixa PDFs oficiais novos, testa e abre PR |
+| `avaliacao-semanal.yml` | segunda, 03:41 | avalia com a Groq de verdade; falhas viram *issue* (secret `GROQ_API_KEY`) |
+| `manter-acordado.yml` | a cada 14 min (opcional) | evita que o servidor gratuito durma |
+| `dependabot.yml` | toda segunda | PRs com versões novas das bibliotecas e das ações |
 
 Avaliações com o modelo de verdade (precisam da `GROQ_API_KEY` / do `fastembed`):
 
@@ -77,8 +114,8 @@ Avaliações com o modelo de verdade (precisam da `GROQ_API_KEY` / do `fastembed
 
 - `GROQ_API_KEY` (obrigatória);
 - `BASE_WEB_TOKEN` (opcional, para o GitHub Actions pedir coleta dos sites);
-- `STATUS_TOKEN` é gerado pelo Render: use no cabeçalho `X-Token` para ver detalhes e métricas:
-  `curl -H "X-Token: $STATUS_TOKEN" https://SEU-SERVICO.onrender.com/api/status`.
+- `STATUS_TOKEN`: senha do painel `/painel` e dos detalhes de `/api/status` (cabeçalho `X-Token`);
+- `DATABASE_URL` (opcional): PostgreSQL para guardar o histórico — passo a passo em [`docs/BANCO.md`](docs/BANCO.md).
 
 No plano gratuito o servidor dorme sem visitas; o workflow opcional `manter-acordado.yml` evita isso (leia o
 custo no próprio arquivo).
@@ -101,8 +138,12 @@ Todas as variáveis estão em [`config.py`](config.py) (lista única, com os pad
 ## Qualidade e feedback
 
 Cada resposta tem botões **Útil / Não ajudou**. Os votos e um resumo de cada resposta (se foi conferida,
-atualizada pelos sites ou corrigida pelas regras, tempo) aparecem nos logs como `[METRICA]` e `[FEEDBACK]`
-(JSON, já sem dados pessoais) e somados em `/api/status` → `metricas`.
+atualizada pelos sites ou corrigida pelas regras, tempo, uso do modelo reserva) aparecem:
+
+- no **painel** `/painel` (senha `STATUS_TOKEN`): aprovação, gráfico por dia, respostas marcadas como
+  "Não ajudou" (candidatas a novos casos de teste) e o histórico da avaliação semanal;
+- nos logs como `[METRICA]` e `[FEEDBACK]` (JSON, já sem dados pessoais);
+- no banco PostgreSQL, se `DATABASE_URL` estiver configurada (consultas prontas em `docs/BANCO.md`).
 
 ## Estrutura
 
@@ -117,10 +158,12 @@ base_web.py            cópia local dos sites oficiais, atualizada a cada 12 h
 pesquisa.py            descobre páginas oficiais para qualquer assunto (sitemaps, busca interna)
 privacidade.py         mascara CPF, CNPJ, e-mail e telefone
 metricas.py            contadores de qualidade e votos
+banco.py               PostgreSQL opcional (fila em segundo plano, retenção de 180 dias)
 voz.py                 transcrição da pergunta falada (Groq Whisper)
 atualizar_base.py      baixa as versões novas dos PDFs oficiais (fontes_pdfs.json)
 preparar_base.py       etapa de build (PDFs, índice, 1ª coleta dos sites)
-static/                páginas (início e chat), voz e Libras no navegador
+static/                páginas (início, chat e painel), voz e Libras no navegador
+docs/                  guia do banco (BANCO.md) e capturas de tela
 tests/                 testes offline;  testes.py roda todos
 ```
 
@@ -131,5 +174,5 @@ tests/                 testes offline;  testes.py roda todos
 - `regras_fiscais.json` precisa de revisão anual pelo NAF; os valores atuais ainda não foram validados.
 - O PDF `3-Perguntas&Respostas2_MEI.pdf` vem do Portal do Empreendedor (gov.br/mei), que não está na lista de
   sites de onde o bot baixa sozinho; ele precisa ser trocado manualmente quando sair edição nova.
-- Os contadores de métricas recomeçam quando o servidor reinicia (o disco do plano gratuito não é
-  permanente); o histórico fica nos logs do Render.
+- Sem `DATABASE_URL`, os contadores de métricas recomeçam quando o servidor reinicia (o disco do plano
+  gratuito não é permanente).

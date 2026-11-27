@@ -2,6 +2,7 @@
 
 - Serve a página (static/index.html, style.css, script.js)
 - Expõe a API:  GET /api/status, POST /api/chat, POST /api/feedback, POST /api/voz/transcrever
+- Painel de qualidade: GET /painel (a página pede a senha STATUS_TOKEN; os dados vêm de GET /api/painel)
 Para testar localmente:  python app.py   ->  http://localhost:5000
 
 Proteções: limite de perguntas por IP (IP real vindo do Cloudflare, não do X-Forwarded-For, que pode
@@ -41,6 +42,7 @@ from flask import (Flask, Response, abort, jsonify, request, send_from_directory
 
 load_dotenv()
 
+import banco  # noqa: E402
 import config as C  # noqa: E402
 import metricas  # noqa: E402
 
@@ -308,6 +310,7 @@ def status():
         regras_nao_validadas=_regras_pendentes(),
         base_web=web,
         metricas=metricas.resumo(),
+        banco=banco.status(),
         config=C.publico(),
         **_info_arquivo_rag(),
     )
@@ -392,7 +395,8 @@ def chat():
                 else:
                     # id da resposta: liga o voto 👍/👎 (POST /api/feedback) a esta resposta nas métricas
                     id_resposta = uuid.uuid4().hex[:16]
-                    metricas.registrar_resposta(id_resposta, pergunta, dado, (time.time() - inicio) * 1000)
+                    metricas.registrar_resposta(id_resposta, pergunta, dado, (time.time() - inicio) * 1000,
+                                                versao=getattr(rag, "VERSAO", None))
                     yield json.dumps(dict(dado, tipo="fim", id=id_resposta), ensure_ascii=False) + "\n"
         except Exception as erro:  # noqa: BLE001
             print(f"[ERRO] Ao responder: {type(erro).__name__}: {erro}", flush=True)
@@ -420,6 +424,31 @@ def feedback():
         # resposta antiga (servidor reiniciou) ou desconhecida: não é erro para quem votou
         return jsonify(ok=False, motivo="resposta não encontrada"), 200
     return jsonify(ok=True)
+
+
+@app.get("/painel")
+def pagina_painel():
+    """Painel de qualidade (a página em si é pública; os dados exigem a senha STATUS_TOKEN)."""
+    return send_from_directory(app.static_folder, "painel.html")
+
+
+@app.get("/api/painel")
+def dados_painel():
+    """Números do painel. Com banco: histórico de até 90 dias; sem banco: só desde o último reinício."""
+    if not _tem_token():
+        return jsonify(erro="Senha inválida."), 401
+    try:
+        dias = min(max(int(request.args.get("dias", 30)), 1), 90)
+    except ValueError:
+        dias = 30
+    dados = {"banco": banco.ativo(), "memoria": metricas.resumo(), "banco_status": banco.status()}
+    if banco.ativo():
+        try:
+            dados["historico"] = banco.painel(dias)
+        except Exception as erro:  # noqa: BLE001
+            print(f"[ERRO] painel: {type(erro).__name__}: {erro}", flush=True)
+            dados["erro_banco"] = "Não consegui ler o banco agora. Tente de novo em instantes."
+    return jsonify(dados)
 
 
 @app.post("/api/voz/transcrever")

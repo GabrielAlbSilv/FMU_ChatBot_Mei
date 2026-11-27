@@ -8,8 +8,10 @@ Onde ver:
   - GET /api/status com o cabeçalho X-Token (STATUS_TOKEN ou BASE_WEB_TOKEN): campo "metricas";
   - logs do servidor (Render > Logs): uma linha "[METRICA] {...}" por resposta e "[FEEDBACK] {...}" por
     voto, em JSON — dá para filtrar e copiar para uma planilha.
-O plano gratuito do Render apaga o disco a cada reinício, então nada é gravado em arquivo: os
-contadores recomeçam quando o servidor reinicia e o histórico fica nos logs.
+  - com DATABASE_URL (banco.py, ex.: Neon gratuito): cada resposta e cada voto também vão para o banco,
+    em segundo plano, e o painel /painel mostra o histórico mesmo depois de o Render reiniciar.
+Sem banco, os contadores daqui recomeçam quando o servidor reinicia (o disco do plano gratuito do
+Render não é permanente) e o histórico fica só nos logs.
 
 Privacidade: a pergunta guardada para o feedback já vem mascarada (privacidade.py) e só fica em
 memória (últimas 500 respostas).
@@ -19,6 +21,7 @@ import threading
 import time
 from collections import Counter, OrderedDict, deque
 
+import banco
 import privacidade
 
 MAX_RESPOSTAS = 500        # respostas lembradas para ligar o voto à resposta
@@ -33,29 +36,34 @@ def _log(rotulo, dados):
     print(f"[{rotulo}] {json.dumps(dados, ensure_ascii=False, default=str)}", flush=True)
 
 
-def registrar_resposta(id_resposta, pergunta, resultado, ms):
-    """Conta uma resposta entregue e guarda o resumo dela para um possível voto."""
+def registrar_resposta(id_resposta, pergunta, resultado, ms, versao=None):
+    """Conta uma resposta entregue e guarda o resumo dela para um possível voto (e no banco, se houver)."""
     verificacao = (resultado.get("verificacao") or {}).get("status") or "nao_aplicavel"
     ajuste = resultado.get("ajuste_regras") or "nenhum"
     temas = [f.get("tema") for f in resultado.get("fatos") or []]
     resumo = {"id": id_resposta, "ms": int(ms), "verificacao": verificacao, "ajuste_regras": ajuste,
               "substituida": bool(resultado.get("substituida")), "cache": bool(resultado.get("cache")),
+              "modelo_reserva": bool(resultado.get("modelo_reserva")),
               "temas_regras": temas, "fontes": len(resultado.get("fontes") or []),
               "paginas_oficiais": len(resultado.get("paginas_oficiais") or [])}
+    completo = dict(resumo, pergunta=privacidade.mascarar(pergunta)[:300],
+                    resposta=str(resultado.get("resposta") or "")[:400], versao=versao)
     with _trava:
         _contadores["respostas"] += 1
         _contadores[f"verificacao:{verificacao}"] += 1
         _contadores[f"ajuste:{ajuste}"] += 1
         if resumo["cache"]:
             _contadores["cache"] += 1
+        if resumo["modelo_reserva"]:
+            _contadores["modelo_reserva"] += 1
         for t in temas:
             _contadores[f"regra:{t}"] += 1
         _tempos.append(int(ms))
-        _respostas[id_resposta] = dict(resumo, pergunta=privacidade.mascarar(pergunta)[:300],
-                                       resposta=str(resultado.get("resposta") or "")[:400], em=time.time())
+        _respostas[id_resposta] = dict(completo, em=time.time())
         while len(_respostas) > MAX_RESPOSTAS:
             _respostas.popitem(last=False)
     _log("METRICA", resumo)
+    banco.salvar_resposta(completo)
 
 
 def registrar_erro(tipo):
@@ -68,21 +76,35 @@ VOTOS = ("util", "nao_util")
 
 
 def registrar_feedback(id_resposta, voto, comentario=""):
-    """Guarda o voto de uma resposta. Devolve False se o voto ou a resposta não forem válidos."""
+    """Guarda o voto de uma resposta. Devolve False se o voto ou a resposta não forem válidos.
+
+    Com banco: o voto é gravado lá também — inclusive de respostas que o servidor já esqueceu
+    (ex.: a pessoa votou depois de um reinício do Render).
+    """
     if voto not in VOTOS:
         return False
+    comentario = privacidade.mascarar(str(comentario or ""))[:500]
     with _trava:
         resposta = _respostas.get(id_resposta)
         if not resposta:
-            return False
+            if banco.ativo():
+                _contadores[f"feedback:{voto}"] += 1
+            else:
+                return False
+    if not resposta:
+        banco.salvar_voto(id_resposta, voto, comentario)
+        _log("FEEDBACK", {"id": id_resposta, "voto": voto, "comentario": comentario, "so_no_banco": True})
+        return True
+    with _trava:
         if resposta.get("voto"):            # um voto por resposta (troca de ideia vale o último)
             _contadores[f"feedback:{resposta['voto']}"] -= 1
         resposta["voto"] = voto
         _contadores[f"feedback:{voto}"] += 1
         dados = {k: resposta.get(k) for k in ("id", "verificacao", "ajuste_regras", "substituida", "temas_regras",
                                              "pergunta", "resposta")}
-    dados.update(voto=voto, comentario=privacidade.mascarar(str(comentario or ""))[:500])
+    dados.update(voto=voto, comentario=comentario)
     _log("FEEDBACK", dados)
+    banco.salvar_voto(id_resposta, voto, comentario)
     return True
 
 
@@ -107,6 +129,7 @@ def resumo():
                        "atualizada_pelos_sites": taxa("verificacao:atualizada"),
                        "corrigida_pelas_regras": taxa("ajuste:corrigida"),
                        "complementada_pelas_regras": taxa("ajuste:complementada"),
+                       "modelo_reserva": taxa("modelo_reserva"),
                        "do_cache": taxa("cache")},
         "feedback": {"util": c.get("feedback:util", 0), "nao_util": c.get("feedback:nao_util", 0),
                      "aprovacao": round(100 * c.get("feedback:util", 0) / votos, 1) if votos else None},

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor  # noqa: E402
 from datetime import datetime  # noqa: E402
 from pathlib import Path  # noqa: E402
 
-VERSAO = "rag-leve-v13-lc238"
+VERSAO = "rag-leve-v14"
 ETAPA = "rag.py novo carregando"
 
 
@@ -58,6 +58,8 @@ from busca import (ARQ_META, ARQ_TRECHOS, ARQ_VETORES, DOCUMENTOS_CONHECIDOS, K,
 _etapa("rag importado")
 
 MODELO_LLM = C.MODELO_LLM
+MODELO_RESERVA = C.MODELO_RESERVA if C.MODELO_RESERVA != C.MODELO_LLM else ""
+PAUSA_RESERVA_S = C.PAUSA_RESERVA_S
 # Modelo usado só para reescrever a pergunta antes da busca. O padrão é o gpt-oss-20b, cerca de
 # 2x mais rápido que o 120b e suficiente para essa tarefa curta. Se a Groq recusar o modelo
 # (ex.: foi descontinuado), o bot passa a usar o MODELO_LLM sozinho.
@@ -606,15 +608,44 @@ def trechos_da_web(consulta, k=WEB_NA_RESPOSTA, pergunta=None):
              "data": a.get("data", ""), "tipo": a.get("tipo", "pagina"), "texto": a["texto"]} for a in achados]
 
 
+# ------------------------------------------------- modelo reserva (limite de uso da Groq)
+_reserva_ate = [0.0]   # até quando usar o reserva direto, sem tentar o principal
+
+
+def eh_limite_de_uso(erro):
+    """Erro 429 da Groq (limite de pedidos ou de tokens por minuto/dia)."""
+    return type(erro).__name__ == "RateLimitError" or getattr(erro, "status_code", None) == 429
+
+
+def _modelo_da_vez():
+    return MODELO_RESERVA if MODELO_RESERVA and time.time() < _reserva_ate[0] else MODELO_LLM
+
+
+def _criar_resposta(cliente, **parametros):
+    """Chama o modelo principal; se a Groq recusar por limite (429), usa o MODELO_RESERVA.
+
+    Depois de um 429, o reserva é usado direto por PAUSA_RESERVA_S segundos (não adianta insistir
+    no principal nesse intervalo). Devolve (resposta_da_groq, modelo_usado). Se o reserva também
+    estiver no limite, o erro sobe e a pessoa vê a mensagem de "muitas pessoas usando".
+    """
+    modelo = _modelo_da_vez()
+    try:
+        return cliente.chat.completions.create(model=modelo, **_opcoes_modelo(modelo, ESFORCO_RESPOSTA),
+                                               **parametros), modelo
+    except Exception as erro:  # noqa: BLE001
+        if modelo != MODELO_LLM or not MODELO_RESERVA or not eh_limite_de_uso(erro):
+            raise
+        _reserva_ate[0] = time.time() + PAUSA_RESERVA_S
+        print(f"[RAG] limite da Groq no modelo {MODELO_LLM}; usando o reserva {MODELO_RESERVA} "
+              f"por {PAUSA_RESERVA_S}s", flush=True)
+        return cliente.chat.completions.create(model=MODELO_RESERVA, **_opcoes_modelo(MODELO_RESERVA, ESFORCO_RESPOSTA),
+                                               **parametros), MODELO_RESERVA
+
+
 def _gerar_texto(cliente, mensagens):
-    """Chama o modelo em streaming. Produz ("texto", pedaço) e, no fim, ("completo", texto_inteiro)."""
-    fluxo = cliente.chat.completions.create(
-        model=MODELO_LLM,
-        temperature=0.2,
-        stream=True,
-        messages=mensagens,
-        **_opcoes_modelo(MODELO_LLM, ESFORCO_RESPOSTA),
-    )
+    """Chama o modelo em streaming. Produz ("modelo", nome), ("texto", pedaço)... e ("completo", texto_inteiro)."""
+    fluxo, modelo = _criar_resposta(cliente, temperature=0.2, stream=True, messages=mensagens)
+    yield "modelo", modelo
     completo, enviado = "", 0
     for pedaco in fluxo:
         if not pedaco.choices:
@@ -716,11 +747,13 @@ def responder_stream(indice, cliente, pergunta, historico=None):
     segurar = bool(fatos)
     if segurar:
         yield "status", "Calculando pelas regras oficiais…"
-    completo = ""
+    completo, modelo_usado = "", MODELO_LLM
     for tipo, dado in _gerar_texto(cliente, mensagens):
         if tipo == "texto":
             if not segurar:
                 yield "texto", dado
+        elif tipo == "modelo":
+            modelo_usado = dado
         else:
             completo = dado
 
@@ -743,9 +776,11 @@ def responder_stream(indice, cliente, pergunta, historico=None):
         substituida = substituida or ajuste == "corrigida"
     elif substituida:   # a versão dos sites também passa pelas regras
         resposta, citados, ajuste = _aplicar_regras(resposta, citados, fatos)
+    if modelo_usado != MODELO_LLM:
+        chave = None   # resposta do modelo reserva não vai para o cache
     yield "fim", dict(_montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificacao, chave,
                                         fatos, ajuste),
-                      substituida=substituida, cache=False)
+                      substituida=substituida, cache=False, modelo_reserva=modelo_usado != MODELO_LLM)
 
 
 _MARCA_FATO = re.compile(r"\s?\[\s*F\d{1,2}\s*\]")
@@ -815,13 +850,9 @@ def _responder_com_conferencia(cliente, trechos, consultas, pergunta, mensagens,
     foi possível conferir). Eventos extras ("status") deixam a tela informar cada etapa.
     """
     yield "status", "Consultando os documentos…"
-    r = cliente.chat.completions.create(
-        model=MODELO_LLM,
-        temperature=0.2,
-        stream=False,
-        messages=mensagens,
-        **_opcoes_modelo(MODELO_LLM, ESFORCO_RESPOSTA),
-    )
+    r, modelo_usado = _criar_resposta(cliente, temperature=0.2, stream=False, messages=mensagens)
+    if modelo_usado != MODELO_LLM:
+        chave = None
     completo = r.choices[0].message.content or ""
     texto, sugestoes = _separar_sugestoes(completo)
     resposta, citados = _extrair_citacoes(texto, len(trechos))
@@ -838,7 +869,7 @@ def _responder_com_conferencia(cliente, trechos, consultas, pergunta, mensagens,
     yield "texto", resposta
     yield "fim", dict(_montar_resultado(pergunta, resposta, citados, trechos, sugestoes, verificacao, chave,
                                         fatos, ajuste),
-                      substituida=False, cache=False)
+                      substituida=False, cache=False, modelo_reserva=modelo_usado != MODELO_LLM)
 
 
 def responder(indice, cliente, pergunta, historico=None):

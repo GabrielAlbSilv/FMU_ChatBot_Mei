@@ -158,6 +158,12 @@ def _gravar_historico(rag, aprovados, reprovados):
     pasta.mkdir(exist_ok=True)
     with open(pasta / "historico_avaliacoes.jsonl", "a", encoding="utf-8") as f:
         f.write(json.dumps(linha, ensure_ascii=False) + "\n")
+    try:   # com DATABASE_URL, a rodada também aparece no painel (/painel)
+        import banco
+        if banco.salvar_avaliacao(linha, origem=os.getenv("ORIGEM_AVALIACAO", "manual")):
+            print("Resultado gravado no banco de dados (painel).")
+    except Exception as erro:  # noqa: BLE001
+        print(f"Aviso: não consegui gravar no banco: {type(erro).__name__}: {erro}")
 
 
 if __name__ == "__main__":

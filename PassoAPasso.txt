@@ -145,3 +145,11 @@
 	- python avaliar_busca.py <modelo>   compara modelos de embeddings (acertos e memória) antes de trocar.
 	- python avaliar_casos.py grava o resultado em relatorios/historico_avaliacoes.jsonl (compare versões).
 	- Opcional: .github/workflows/manter-acordado.yml evita que o servidor gratuito durma (ver o arquivo).
+
+18. Versão 14 (resumo; detalhes no README.md e no CHANGELOG.md):
+	- Banco de dados opcional (PostgreSQL gratuito no Neon): guarda respostas, votos e avaliações.
+	  Passo a passo completo em docs/BANCO.md. Variável: DATABASE_URL (Render e secret do GitHub).
+	- Painel de qualidade: https://SEU-SERVICO.onrender.com/painel  (senha = STATUS_TOKEN do Render).
+	- Modelo reserva: se a Groq der limite de uso (429), responde com MODELO_RESERVA em vez de erro.
+	- Avaliação semanal no GitHub Actions (precisa do secret GROQ_API_KEY): se algum caso falhar, abre uma issue.
+	- Dependabot: toda segunda abre PRs com versões novas das bibliotecas e das ações (rodam os testes antes).

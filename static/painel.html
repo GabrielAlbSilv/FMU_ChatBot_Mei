@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Painel de qualidade — FiscOn</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <style>
+    :root {
+      --fundo: #f7f5f5; --cartao: #ffffff; --texto: #1d1a1b; --suave: #6b6164; --borda: #ece4e5;
+      --marca: #c8102e; --ok: #15803d; --alerta: #b45309; --barra: #c8102e; --barra-clara: #f3c9d0;
+      --fonte: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --fundo: #141112; --cartao: #1e1a1b; --texto: #f2eeef; --suave: #a99fa2; --borda: #33292c;
+              --marca: #e5384f; --ok: #4ade80; --alerta: #fbbf24; --barra: #e5384f; --barra-clara: #5a2a33; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--fundo); color: var(--texto); font: 15px/1.5 var(--fonte); }
+    header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 18px 24px;
+             background: var(--cartao); border-bottom: 1px solid var(--borda); }
+    header h1 { font-size: 18px; margin: 0; flex: 1; }
+    header h1 span { color: var(--marca); }
+    main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 18px; margin-bottom: 18px; }
+    .cartao h2 { font-size: 15px; margin: 0 0 12px; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .kpi { background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 14px 16px; }
+    .kpi b { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
+    .kpi small { color: var(--suave); }
+    .kpi.bom b { color: var(--ok); } .kpi.atencao b { color: var(--alerta); }
+    button, select, input { font: inherit; border-radius: 8px; border: 1px solid var(--borda); padding: 7px 12px;
+                            background: var(--cartao); color: var(--texto); }
+    button.principal { background: var(--marca); color: #fff; border-color: var(--marca); cursor: pointer; }
+    button { cursor: pointer; }
+    #entrar { max-width: 420px; margin: 60px auto; }
+    #entrar input { width: 100%; margin: 8px 0 12px; }
+    .erro { color: var(--marca); }
+    .grafico { display: flex; align-items: flex-end; gap: 3px; height: 160px; padding-top: 8px; border-bottom: 1px solid var(--borda); }
+    .grafico div { flex: 1; min-width: 4px; background: var(--barra-clara); border-radius: 3px 3px 0 0; position: relative; }
+    .grafico div i { position: absolute; bottom: 0; left: 0; right: 0; background: var(--barra); border-radius: 3px 3px 0 0; }
+    .legenda { display: flex; justify-content: space-between; color: var(--suave); font-size: 12px; margin-top: 4px; }
+    .legenda-cores { display: flex; gap: 14px; font-size: 12px; color: var(--suave); margin-bottom: 4px; }
+    .legenda-cores span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+                                  margin-right: 5px; vertical-align: -1px; background: var(--barra-clara); }
+    .legenda-cores span.forte::before { background: var(--barra); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--borda); vertical-align: top; }
+    th { color: var(--suave); font-weight: 600; font-size: 12.5px; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    details summary { cursor: pointer; color: var(--suave); }
+    .aviso { color: var(--suave); font-size: 13.5px; }
+    .vazio { color: var(--suave); font-style: italic; }
+    .etiqueta { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--borda); color: var(--suave); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span>FiscOn</span> · Painel de qualidade</h1>
+    <label id="rotulo-periodo" hidden>Período
+      <select id="periodo"><option value="7">7 dias</option><option value="30" selected>30 dias</option><option value="90">90 dias</option></select>
+    </label>
+    <button id="sair" type="button" hidden>Sair</button>
+  </header>
+
+  <main>
+    <form id="entrar" class="cartao">
+      <h2>Entrar</h2>
+      <p class="aviso">Use a senha <code>STATUS_TOKEN</code> configurada no Render (Environment).</p>
+      <input id="senha" type="password" autocomplete="current-password" placeholder="STATUS_TOKEN" required>
+      <button class="principal" type="submit">Ver o painel</button>
+      <p id="erro-login" class="erro" hidden></p>
+    </form>
+
+    <section id="painel" hidden>
+      <p id="aviso-banco" class="aviso"></p>
+      <div id="kpis" class="kpis"></div>
+      <div class="cartao" id="cartao-grafico">
+        <h2>Respostas por dia</h2>
+        <div class="legenda-cores"><span>respostas</span><span class="forte">avaliadas como “Útil”</span></div>
+        <div id="grafico" class="grafico" role="img" aria-label="Respostas por dia"></div>
+        <div id="legenda" class="legenda"></div>
+      </div>
+      <div class="cartao">
+        <h2>Respostas marcadas como “Não ajudou” <small class="aviso">— viram casos novos do avaliar_casos.py</small></h2>
+        <div id="piores"></div>
+      </div>
+      <div class="cartao">
+        <h2>Avaliações automáticas (avaliar_casos.py)</h2>
+        <div id="avaliacoes"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const CHAVE = "fiscon-painel-token";
+      const $ = (id) => document.getElementById(id);
+      const esc = (t) => String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const pct = (v) => (v === null || v === undefined ? "—" : `${Number(v).toLocaleString("pt-BR")}%`);
+      const seg = (ms) => (ms ? `${(ms / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s` : "—");
+      const diaBr = (iso) => iso.split("-").reverse().slice(0, 2).join("/");
+
+      function guardarToken(t) { try { sessionStorage.setItem(CHAVE, t); } catch (_) { /* sem armazenamento */ } }
+      function lerToken() { try { return sessionStorage.getItem(CHAVE) || ""; } catch (_) { return ""; } }
+      function esquecerToken() { try { sessionStorage.removeItem(CHAVE); } catch (_) { /* ignora */ } }
+
+      async function carregar() {
+        const token = lerToken();
+        if (!token) return mostrarLogin();
+        const r = await fetch(`/api/painel?dias=${$("periodo").value}`, { headers: { "X-Token": token }, cache: "no-store" });
+        if (r.status === 401) { esquecerToken(); return mostrarLogin("Senha inválida."); }
+        if (!r.ok) return mostrarLogin("O servidor não respondeu. Tente de novo.");
+        desenhar(await r.json());
+      }
+
+      function mostrarLogin(msg) {
+        $("entrar").hidden = false; $("painel").hidden = true; $("sair").hidden = true; $("rotulo-periodo").hidden = true;
+        $("erro-login").hidden = !msg; $("erro-login").textContent = msg || "";
+      }
+
+      function kpi(rotulo, valor, detalhe, classe = "") {
+        return `<div class="kpi ${classe}"><small>${esc(rotulo)}</small><b>${esc(valor)}</b><small>${esc(detalhe || "")}</small></div>`;
+      }
+
+      function desenhar(d) {
+        $("entrar").hidden = true; $("painel").hidden = false; $("sair").hidden = false; $("rotulo-periodo").hidden = false;
+        const h = d.historico;
+        if (!d.banco) {
+          $("aviso-banco").innerHTML = "Sem banco de dados: números desde o último reinício do servidor. " +
+            "Configure <code>DATABASE_URL</code> para guardar o histórico (veja <code>docs/BANCO.md</code>).";
+        } else if (d.erro_banco) {
+          $("aviso-banco").textContent = d.erro_banco;
+        } else {
+          $("aviso-banco").textContent = `Histórico dos últimos ${h.dias} dias (banco de dados).`;
+        }
+        const t = h ? h.totais : null;
+        const m = d.memoria;
+        const aprov = t ? t.aprovacao : m.feedback.aprovacao;
+        const votos = t ? t.votos : m.feedback.util + m.feedback.nao_util;
+        const p = t || m.percentual;
+        $("kpis").innerHTML =
+          kpi("Respostas", (t ? t.respostas : m.respostas).toLocaleString("pt-BR")) +
+          kpi("Aprovação (Útil)", pct(aprov), `${votos} voto(s)`, aprov === null ? "" : aprov >= 80 ? "bom" : "atencao") +
+          kpi("Confirmadas pelos sites", pct(p.conferida_confirmada)) +
+          kpi("Atualizadas pelos sites", pct(p.atualizada_pelos_sites)) +
+          kpi("Corrigidas pelas regras", pct(p.corrigida_pelas_regras), "conta errada do modelo") +
+          kpi("Modelo reserva", pct(p.modelo_reserva), "limite da Groq atingido", p.modelo_reserva > 5 ? "atencao" : "") +
+          kpi("Tempo mediano", seg(t ? t.tempo_mediano_ms : m.tempo_ms.mediana));
+
+        $("cartao-grafico").hidden = !h;
+        if (h) {
+          const maior = Math.max(1, ...h.por_dia.map((x) => x.respostas));
+          $("grafico").innerHTML = h.por_dia.map((x) =>
+            `<div style="height:${(100 * x.respostas / maior).toFixed(1)}%" title="${esc(diaBr(x.dia))}: ${x.respostas} resposta(s), ` +
+            `${x.util} útil, ${x.nao_util} não ajudou"><i style="height:${x.respostas ? (100 * x.util / x.respostas).toFixed(1) : 0}%"></i></div>`
+          ).join("") || '<p class="vazio">Sem respostas no período.</p>';
+          const dias = h.por_dia;
+          $("legenda").innerHTML = dias.length ? `<span>${esc(diaBr(dias[0].dia))}</span><span>${esc(diaBr(dias[dias.length - 1].dia))}</span>` : "";
+        }
+
+        const piores = h ? h.piores : [];
+        $("piores").innerHTML = piores.length ? "<table><thead><tr><th>Quando</th><th>Pergunta</th><th>Comentário</th><th>Resposta</th><th>Conferência</th></tr></thead><tbody>" +
+          piores.map((x) => `<tr><td>${esc(x.criado_em)}</td><td>${esc(x.pergunta)}</td><td>${esc(x.comentario || "—")}</td>` +
+            `<td><details><summary>ver</summary>${esc(x.resposta)}</details></td>` +
+            `<td><span class="etiqueta">${esc(x.verificacao || "—")}</span> <span class="etiqueta">${esc(x.ajuste || "—")}</span></td></tr>`).join("") +
+          "</tbody></table>" : `<p class="vazio">${h ? "Nenhuma resposta marcada como “Não ajudou” no período." : "Disponível com o banco de dados."}</p>`;
+
+        const av = h ? h.avaliacoes : [];
+        $("avaliacoes").innerHTML = av.length ? "<table><thead><tr><th>Quando</th><th>Versão</th><th>Origem</th><th class='num'>Acertos</th><th>Reprovados</th></tr></thead><tbody>" +
+          av.map((x) => `<tr><td>${esc(x.criado_em)}</td><td>${esc(x.versao)}${x.commit_git ? ` <small>(${esc(x.commit_git)})</small>` : ""}</td>` +
+            `<td>${esc(x.origem)}</td><td class="num">${esc(x.aprovados)}/${esc(x.casos)} (${pct(x.percentual)})</td>` +
+            `<td>${(x.reprovados || []).map(esc).join("<br>") || "—"}</td></tr>`).join("") +
+          "</tbody></table>" : `<p class="vazio">${h ? "Nenhuma avaliação gravada ainda. Rode o workflow “Avaliação semanal”." : "Disponível com o banco de dados."}</p>`;
+      }
+
+      $("entrar").addEventListener("submit", (e) => {
+        e.preventDefault();
+        guardarToken($("senha").value.trim());
+        $("senha").value = "";
+        carregar();
+      });
+      $("sair").addEventListener("click", () => { esquecerToken(); mostrarLogin(); });
+      $("periodo").addEventListener("change", carregar);
+      carregar();
+    })();
+  </script>
+</body>
+</html>

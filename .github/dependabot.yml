@@ -1,0 +1,29 @@
+# Dependabot: abre Pull Requests sozinho quando sai versão nova das bibliotecas Python
+# (requirements*.txt) ou das ações do GitHub (.github/workflows). Cada PR roda o workflow "Testes".
+# Atualizações "maiores" (que podem quebrar) chegam em PRs separados, para revisar com calma.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    labels: ["dependências"]
+    groups:
+      bibliotecas-menores:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Sao_Paulo
+    labels: ["dependências"]
+    groups:
+      acoes-do-github:
+        patterns: ["*"]

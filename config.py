@@ -67,6 +67,10 @@ MODELO_REESCRITA = texto("MODELO_REESCRITA", "openai/gpt-oss-20b")
 MODELO_VERIFICACAO = texto("MODELO_VERIFICACAO", MODELO_LLM)
 MODELO_TRANSCRICAO = texto("MODELO_TRANSCRICAO", "whisper-large-v3-turbo")
 ESFORCO_RESPOSTA = texto("ESFORCO_RESPOSTA", "low")
+# Modelo usado quando a Groq recusa o principal por limite de uso (erro 429). Na Groq cada modelo tem
+# o seu próprio limite, então o reserva costuma estar livre. Vazio = sem reserva (mostra o erro).
+MODELO_RESERVA = texto("MODELO_RESERVA", "openai/gpt-oss-20b")
+PAUSA_RESERVA_S = inteiro("PAUSA_RESERVA_S", 60)   # depois de um 429, usa o reserva direto por N segundos
 REESCREVER_CONSULTA = flag("REESCREVER_CONSULTA", True)
 # A reescrita da pergunta também sugere dados (faturamento, mês de abertura...). O código só aceita
 # o que conseguir confirmar no texto do usuário. 0 = usa só as regras de texto (regex).
@@ -94,6 +98,12 @@ BASE_WEB_ATRASO_S = inteiro("BASE_WEB_ATRASO_S", 20)
 ATUALIZAR_PDFS_NO_BUILD = flag("ATUALIZAR_PDFS_NO_BUILD", True)
 COLETAR_WEB_NO_BUILD = flag("COLETAR_WEB_NO_BUILD", True)
 
+# --------------------------------------------------------------------- banco de dados (opcional)
+# PostgreSQL (ex.: Neon gratuito) para guardar respostas, votos e avaliações entre reinícios do Render.
+# Sem DATABASE_URL, tudo continua funcionando só em memória (como antes). Passo a passo: docs/BANCO.md
+DATABASE_URL = texto("DATABASE_URL")
+RETENCAO_DIAS = inteiro("RETENCAO_DIAS", 180)      # perguntas guardadas (já sem dados pessoais) por N dias
+
 # ------------------------------------------------------------------------------------- voz
 MAX_MB_AUDIO = decimal("MAX_MB_AUDIO", 6)
 
@@ -101,6 +111,7 @@ MAX_MB_AUDIO = decimal("MAX_MB_AUDIO", 6)
 def publico():
     """Configuração atual SEM segredos (aparece nos detalhes de /api/status para quem tem o token)."""
     nomes = ["MODELO_EMBEDDINGS", "MODELO_LLM", "MODELO_REESCRITA", "MODELO_VERIFICACAO", "MODELO_TRANSCRICAO",
+             "MODELO_RESERVA", "PAUSA_RESERVA_S", "RETENCAO_DIAS",
              "ESFORCO_RESPOSTA", "REESCREVER_CONSULTA", "EXTRAIR_DADOS_LLM", "CONFERENCIA_MODO", "WEB_NA_RESPOSTA",
              "VERIFICAR_SITES", "PESQUISA_ATIVA", "PESQUISA_LIMIAR", "MAX_TRECHOS_POR_PDF", "BASE_WEB_ATIVA",
              "BASE_WEB_HORAS", "BASE_WEB_MAX_PAGINAS", "LIMITE_POR_IP", "LIMITE_GLOBAL", "JANELA_SEGUNDOS",
