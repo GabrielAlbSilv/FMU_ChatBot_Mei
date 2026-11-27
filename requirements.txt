@@ -8,4 +8,4 @@ numpy>=1.26,<3
 pypdf>=5.0,<7
 groq>=1.0,<2
 # Banco de dados opcional (DATABASE_URL). Só é usado se a variável existir.
-psycopg[binary]>=3.1,<4
+psycopg[binary]>=3.3.9,<4
