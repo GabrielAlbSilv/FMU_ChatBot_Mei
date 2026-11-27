@@ -40,10 +40,10 @@ jobs:
         if: env.GROQ_API_KEY == ''
         run: echo "::warning::Crie o secret GROQ_API_KEY em Settings > Secrets and variables > Actions para ativar a avaliação."
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: env.GROQ_API_KEY != ''
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: env.GROQ_API_KEY != ''
         with:
           python-version: "3.12"
@@ -52,7 +52,7 @@ jobs:
 
       - name: Reaproveitar o modelo de embeddings baixado
         if: env.GROQ_API_KEY != ''
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: modelo_cache
           key: embeddings-${{ hashFiles('busca.py', 'config.py') }}
@@ -78,7 +78,7 @@ jobs:
 
       - name: Guardar o relatório (aba Summary > Artifacts)
         if: always() && env.GROQ_API_KEY != ''
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: relatorio-avaliacao
           path: |
