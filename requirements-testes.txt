@@ -3,5 +3,5 @@
 # Mantenha as faixas iguais às do requirements.txt.
 flask>=3.0,<4
 python-dotenv>=1.0,<2
-numpy>=1.26,<3
+numpy>=2.5.5,<3
 pypdf>=5.0,<7
