@@ -9,14 +9,14 @@ Etapas (cada uma pode ser desligada por variável de ambiente; falhas de interne
   3. COLETAR_WEB_NO_BUILD=1 -> faz a primeira coleta dos sites do Sebrae e da Receita Federal
      (base_web.py), para o servidor já começar com a cópia local pronta.
 """
-import os
 import sys
 import time
 
+import config as C
 import rag
 
-ATUALIZAR_PDFS_NO_BUILD = os.getenv("ATUALIZAR_PDFS_NO_BUILD", "1") != "0"
-COLETAR_WEB_NO_BUILD = os.getenv("COLETAR_WEB_NO_BUILD", "1") != "0"
+ATUALIZAR_PDFS_NO_BUILD = C.ATUALIZAR_PDFS_NO_BUILD
+COLETAR_WEB_NO_BUILD = C.COLETAR_WEB_NO_BUILD
 
 
 def _etapa_opcional(nome, funcao):

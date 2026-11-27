@@ -4,41 +4,50 @@
     "(o modelo de linguagem não faz conta: ele só redige a resposta com estes números).",
     "Atualize todo ano (salário mínimo, teto do MEI, limites do IRPF, prazos) e rode: python testes.py",
     "validado_naf: true somente depois que a equipe do NAF conferir o valor na fonte indicada.",
-    "Valores em reais com ponto decimal (ex.: 81.05). Datas no formato dd/mm/aaaa."
+    "Valores em reais com ponto decimal (ex.: 81.05). Datas no formato dd/mm/aaaa.",
+    "LC 238/2026 (21/10/2026): teto de R$ 110 mil em 2027 e R$ 140 mil a partir de 2028 (ambos condicionados à lei orçamentária — art. 3º); até 2 empregados a partir de 01/01/2027; perdão automático das dívidas da contribuição previdenciária do MEI vencidas até 13/10/2026 (efeitos em 2027).",
+    "Quando a lei orçamentária confirmar o novo teto, troque 'vigente' para true no ano (2027/2028). Para o DAS do ano, preencha também 'salario_minimo' (o teto passa a valer mesmo sem ele)."
   ],
-
   "mei": {
     "2025": {
-      "teto_anual": 81000.00,
-      "limite_mensal_proporcional": 6750.00,
-      "salario_minimo": 1518.00,
+      "teto_anual": 81000.0,
+      "limite_mensal_proporcional": 6750.0,
+      "salario_minimo": 1518.0,
       "inss_percentual": 5,
-      "icms": 1.00,
-      "iss": 5.00,
+      "icms": 1.0,
+      "iss": 5.0,
       "prazo_dasn": "31/05/2026",
       "fonte": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoMEI.pdf",
       "validado_naf": false
     },
     "2026": {
-      "teto_anual": 81000.00,
-      "limite_mensal_proporcional": 6750.00,
-      "salario_minimo": 1621.00,
+      "teto_anual": 81000.0,
+      "limite_mensal_proporcional": 6750.0,
+      "salario_minimo": 1621.0,
       "inss_percentual": 5,
-      "icms": 1.00,
-      "iss": 5.00,
+      "icms": 1.0,
+      "iss": 5.0,
       "prazo_dasn": "31/05/2027",
       "fonte": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoMEI.pdf",
       "validado_naf": false
     },
     "2027": {
-      "teto_anual": 110000.00,
+      "teto_anual": 110000.0,
+      "limite_mensal_proporcional": 9166.67,
       "vigente": false,
-      "condicao": "conforme a Lei Complementar nº 238/2026; a ampliação está condicionada à previsão orçamentária, por isso ainda não é tratada como limite em vigor",
-      "fonte": "https://www12.senado.leg.br/noticias",
+      "condicao": "conforme a Lei Complementar nº 238/2026 (art. 2º); a ampliação depende de a renúncia de receita constar na lei orçamentária anual (art. 3º), por isso ainda não é tratada como limite em vigor",
+      "fonte": "https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp238.htm",
+      "validado_naf": false
+    },
+    "2028": {
+      "teto_anual": 140000.0,
+      "limite_mensal_proporcional": 11666.67,
+      "vigente": false,
+      "condicao": "conforme a Lei Complementar nº 238/2026 (nova redação do art. 18-A, §§ 1º e 2º, da LC 123/2006, com efeitos a partir de 01/01/2028); também depende da lei orçamentária (art. 3º)",
+      "fonte": "https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp238.htm",
       "validado_naf": false
     }
   },
-
   "das_regras": {
     "devido_sem_faturamento": true,
     "texto_sem_faturamento": "O DAS do MEI é um valor fixo mensal: é devido todos os meses em que o CNPJ estiver ativo, mesmo sem nenhum faturamento.",
@@ -46,7 +55,6 @@
     "vencimento": "dia 20 de cada mês",
     "fonte": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoMEI.pdf"
   },
-
   "desenquadramento": {
     "percentual_tolerancia": 20,
     "ate_tolerancia": "efeitos a partir de 1º de janeiro do ano seguinte ao do excesso; o MEI paga, junto com o DAS de janeiro, os tributos sobre o valor que passou do limite (como microempresa do Simples Nacional)",
@@ -56,30 +64,50 @@
     "fonte": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoMEI.pdf",
     "validado_naf": false
   },
-
+  "empregados": {
+    "_regra": "número máximo de empregados do MEI por ano-calendário; cada um deve receber exclusivamente 1 salário mínimo ou o piso da categoria",
+    "2026": {
+      "maximo": 1,
+      "fonte": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoMEI.pdf",
+      "validado_naf": false
+    },
+    "2027": {
+      "maximo": 2,
+      "vigencia": "01/01/2027",
+      "observacao": "pode contratar substitutos, em número equivalente, durante afastamentos legais dos empregados (art. 18-C, § 2º)",
+      "fonte": "https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp238.htm",
+      "validado_naf": false
+    }
+  },
+  "remissao_lc238": {
+    "vencimento_ate": "13/10/2026",
+    "efeitos_a_partir_de": "01/01/2027",
+    "texto": "A Lei Complementar nº 238/2026 perdoou (remissão) as dívidas do MEI com a União — a contribuição previdenciária (INSS) do DAS, com juros e multas — vencidas até 13/10/2026, inscritas ou não em Dívida Ativa, parceladas ou não. O perdão é automático (a Receita Federal e a PGFN cancelam de ofício, sem pedido) e passa a valer em 1º de janeiro de 2027; até 31/12/2026 as dívidas e os parcelamentos continuam valendo. O ICMS e o ISS do DAS não entram no perdão (são do estado e do município). Valores já pagos não são devolvidos. Para não perder o benefício, é preciso pagar em dia as contribuições que vencerem nos 6 meses seguintes à entrada em vigor do perdão. Quem discute a dívida na Justiça precisa desistir da ação. A situação pode ser consultada no e-CAC ou no PGMEI.",
+    "fonte": "https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp238.htm",
+    "validado_naf": false
+  },
   "irpf": {
     "2024": {
       "exercicio": 2025,
-      "rendimentos_tributaveis": 33888.00,
-      "isentos_exclusivos": 200000.00,
-      "atividade_rural": 169440.00,
-      "bens_direitos": 800000.00,
+      "rendimentos_tributaveis": 33888.0,
+      "isentos_exclusivos": 200000.0,
+      "atividade_rural": 169440.0,
+      "bens_direitos": 800000.0,
       "prazo": "30/05/2025",
       "fonte": "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda",
       "validado_naf": false
     },
     "2025": {
       "exercicio": 2026,
-      "rendimentos_tributaveis": 35584.00,
-      "isentos_exclusivos": 200000.00,
-      "atividade_rural": 177920.00,
-      "bens_direitos": 800000.00,
+      "rendimentos_tributaveis": 35584.0,
+      "isentos_exclusivos": 200000.0,
+      "atividade_rural": 177920.0,
+      "bens_direitos": 800000.0,
       "prazo": "29/05/2026",
       "fonte": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/marco/receita-comeca-a-receber-declaracoes-do-irpf-no-dia-23-de-marco-prazo-de-entrega-se-encerra-em-29-de-maio",
       "validado_naf": false
     }
   },
-
   "dirf": {
     "extinta_a_partir_de": 2025,
     "texto": "A DIRF foi extinta para pagamentos e retenções a partir de janeiro de 2025: essas informações passaram a ser enviadas pelo eSocial e pela EFD-Reinf (a última DIRF foi a do ano-calendário 2024, entregue em 2025).",

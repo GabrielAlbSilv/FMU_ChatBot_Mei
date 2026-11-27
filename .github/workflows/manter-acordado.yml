@@ -1,0 +1,30 @@
+# OPCIONAL: evita que o servidor gratuito do Render "durma" (ele dorme após ~15 min sem visitas, e a
+# primeira pessoa espera ~1 min para ele acordar; dormindo, a coleta periódica dos sites também para).
+#
+# Para ligar: Settings > Secrets and variables > Actions
+#   - Variable  MANTER_ACORDADO = true
+#   - Secret    FISCON_URL = https://chatbot-mei.onrender.com   (o mesmo do workflow da base)
+# Custo: repositório público = grátis. Repositório PRIVADO = cada execução gasta 1 minuto da cota do
+# GitHub Actions (~3.000 min/mês neste ritmo, acima da cota gratuita de 2.000) — nesse caso, use só em
+# horário de aula ajustando o "cron" abaixo (ex.: "*/14 11-23 * * 1-5" = dias úteis, 8h às 20h).
+# O plano gratuito do Render dá 750 h/mês por conta: um serviço ligado o mês inteiro cabe nisso.
+name: Manter servidor acordado
+
+on:
+  schedule:
+    - cron: "*/14 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    if: vars.MANTER_ACORDADO == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      URL: ${{ secrets.FISCON_URL }}
+    steps:
+      - name: Visitar /api/status
+        if: env.URL != ''
+        run: curl -fsS --max-time 120 "$URL/api/status" > /dev/null && echo "Servidor acordado."

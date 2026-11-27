@@ -1,0 +1,7 @@
+# Só o necessário para rodar  python testes.py  (CI do GitHub Actions). Os testes não chamam a Groq
+# nem o fastembed (são simulados), então essas duas bibliotecas pesadas ficam de fora.
+# Mantenha as faixas iguais às do requirements.txt.
+flask>=3.0,<4
+python-dotenv>=1.0,<2
+numpy>=1.26,<3
+pypdf>=5.0,<7

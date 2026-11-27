@@ -39,3 +39,6 @@ desktop.ini
 # IDEs e editores
 .vscode/
 .idea/
+
+# Testes
+.pytest_cache/

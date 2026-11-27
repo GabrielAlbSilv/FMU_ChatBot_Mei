@@ -9,13 +9,14 @@ Configuração opcional (.env / Render):
   MODELO_TRANSCRICAO=whisper-large-v3-turbo   (rápido e barato; se a Groq recusar, usa whisper-large-v3)
   MAX_MB_AUDIO=6                              (≈ 1 a 2 minutos de fala em webm/ogg)
 """
-import os
 import re
 import unicodedata
 
-MODELO_TRANSCRICAO = os.getenv("MODELO_TRANSCRICAO", "whisper-large-v3-turbo")
+import config as C
+
+MODELO_TRANSCRICAO = C.MODELO_TRANSCRICAO
 MODELO_RESERVA = "whisper-large-v3"
-MAX_BYTES_AUDIO = int(float(os.getenv("MAX_MB_AUDIO", "6")) * 1024 * 1024)
+MAX_BYTES_AUDIO = int(C.MAX_MB_AUDIO * 1024 * 1024)
 MIN_BYTES_AUDIO = 1200          # menos que isso é clique sem fala
 
 # Tipos de áudio que os navegadores gravam (Chrome/Edge: webm; Firefox: ogg; Safari: mp4) e que o

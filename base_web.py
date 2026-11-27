@@ -35,13 +35,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
+import config as C
 import verificador as V
 
-ATIVA = os.getenv("BASE_WEB_ATIVA", "1") != "0"
-INTERVALO_HORAS = float(os.getenv("BASE_WEB_HORAS", "12") or 12)
-MAX_PAGINAS = int(os.getenv("BASE_WEB_MAX_PAGINAS", "80") or 80)
-VERIFICAR_PDFS = os.getenv("BASE_WEB_PDFS", "1") != "0"
-ATRASO_INICIAL = int(os.getenv("BASE_WEB_ATRASO_S", "20") or 20)
+ATIVA = C.BASE_WEB_ATIVA
+INTERVALO_HORAS = C.BASE_WEB_HORAS or 12
+MAX_PAGINAS = C.BASE_WEB_MAX_PAGINAS or 80
+VERIFICAR_PDFS = C.BASE_WEB_PDFS
+ATRASO_INICIAL = C.BASE_WEB_ATRASO_S
 
 RAIZ = Path(__file__).resolve().parent
 PASTA = RAIZ / "indice_web"
@@ -130,7 +131,10 @@ class _Indice:
         return termos, pontos, acertos
 
 
-_trava = threading.Lock()
+_trava = threading.RLock()
+_trava_coleta = threading.Lock()   # só uma coleta por vez (o "rodando" sozinho tinha corrida entre threads)
+ESPERA_REINDEXAR_S = 2.0           # páginas aprendidas em sequência viram UMA reindexação
+_reindexacao = {"pendente": False, "timer": None}
 _estado = {
     "paginas": {},        # url -> {"titulo","site","data","tipo","origem","coletado_em","passagens":[...]}
     "indice": _Indice([]),
@@ -140,6 +144,7 @@ _estado = {
 
 
 def _reindexar():
+    _reindexacao["pendente"] = False
     passagens = []
     for url, pg in _estado["paginas"].items():
         for texto in pg.get("passagens", []):
@@ -159,6 +164,10 @@ def buscar(consulta, k=4, min_termos=2, limite_chars=V.MAX_CHARS_TRECHO, destaqu
     so_urls: limita a busca a essas páginas (ex.: as que acabaram de ser lidas ao vivo).
     Páginas de listagem (busca do site, feed, tag...) nunca entram.
     """
+    if _reindexacao["pendente"]:      # página aprendida há pouco e ainda não indexada: indexa agora
+        with _trava:
+            if _reindexacao["pendente"]:
+                _reindexar()
     indice = _estado["indice"]
     if not consulta or not indice.n:
         return []
@@ -293,7 +302,7 @@ def _verificar_pdfs_novos():
 
 def atualizar_agora():
     """Uma coleta completa. Páginas que falharem desta vez continuam com a versão anterior."""
-    if _estado["rodando"]:
+    if not _trava_coleta.acquire(blocking=False):   # já há uma coleta em andamento
         return status()
     _estado["rodando"] = True
     inicio = time.time()
@@ -360,6 +369,7 @@ def atualizar_agora():
         _log(f"coleta falhou: {_estado['ultimo_erro']}")
     finally:
         _estado["rodando"] = False
+        _trava_coleta.release()
     return status()
 
 
@@ -380,13 +390,35 @@ def _limpar_antigas():
 
 
 def aprender(url, titulo, linhas, data=""):
-    """Guarda uma página lida numa busca ao vivo (assim a próxima pergunta parecida já é instantânea)."""
+    """Guarda uma página lida numa busca ao vivo (assim a próxima pergunta parecida já é instantânea).
+
+    A reindexação (refazer o BM25 de todas as passagens) não acontece a cada página: fica agendada para
+    daqui a ESPERA_REINDEXAR_S segundos, em outra thread, e várias páginas lidas juntas (a conferência
+    lê até 4 em paralelo) viram uma reindexação só. Se alguém buscar antes disso, buscar() indexa na hora.
+    """
     if not ATIVA or not V.url_permitida(url) or url in _estado["paginas"]:
         return
     with _trava:
         if _guardar_pagina(url, titulo, linhas, data or data_da_pagina(" ".join(linhas)), origem="busca"):
             _limpar_antigas()
-            _reindexar()
+            _agendar_reindexacao()
+
+
+def _agendar_reindexacao():
+    _reindexacao["pendente"] = True
+    if _reindexacao["timer"] and _reindexacao["timer"].is_alive():
+        return
+
+    def rodar():
+        with _trava:
+            if _reindexacao["pendente"]:
+                _reindexar()
+
+    t = threading.Timer(ESPERA_REINDEXAR_S, rodar)
+    t.daemon = True
+    t.name = "base-web-reindexar"
+    _reindexacao["timer"] = t
+    t.start()
 
 
 # --------------------------------------------------------------------- disco e status

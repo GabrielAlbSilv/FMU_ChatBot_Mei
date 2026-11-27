@@ -15,3 +15,12 @@ services:
         value: "1"
       - key: GROQ_API_KEY
         sync: false
+      # Senha do GitHub Actions para pedir uma coleta dos sites (mesmo valor no secret BASE_WEB_TOKEN)
+      - key: BASE_WEB_TOKEN
+        sync: false
+      # Senha para ver os detalhes técnicos de /api/status (cabeçalho X-Token). Gerada pelo Render.
+      - key: STATUS_TOKEN
+        generateValue: true
+      # IP real de quem acessa (preenchido pelo Cloudflare na frente do Render; não dá para falsificar)
+      - key: CABECALHO_IP
+        value: True-Client-IP

@@ -1,7 +1,9 @@
 # Mantém a base do FiscOn atualizada todos os dias:
 #   1. baixa as versões mais novas dos PDFs (Sebrae e Receita Federal) -> atualizar_base.py
-#   2. se algum PDF mudou: abre um Pull Request (padrão) OU publica direto no ramo principal
-#      (se a variável PUBLICAR_DIRETO = true). Ao entrar no ramo principal, o Render refaz o deploy.
+#   2. se algum PDF mudou: roda os testes com os PDFs novos e abre um Pull Request (padrão) OU publica
+#      direto no ramo principal (se a variável PUBLICAR_DIRETO = true E os testes passarem).
+#      Ao entrar no ramo principal, o Render refaz o deploy.
+#      (PRs abertos pelo GITHUB_TOKEN não disparam o workflow "Testes"; por isso os testes rodam aqui.)
 #   3. (opcional) pede ao Render um novo deploy mesmo sem mudança no GitHub (secret RENDER_DEPLOY_HOOK):
 #      o build (preparar_base.py) baixa os PDFs mais novos, refaz o índice e coleta os sites oficiais.
 #   4. (opcional) pede ao servidor uma coleta dos sites agora (secrets FISCON_URL + BASE_WEB_TOKEN).
@@ -39,15 +41,31 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Instalar dependência
-        run: pip install pypdf
+      - name: Instalar dependências
+        run: pip install -r requirements-testes.txt
 
       - name: Baixar PDFs novos
         id: atualizar
         run: python atualizar_base.py
 
+      - name: Rodar os testes com a base nova
+        id: testes
+        if: steps.atualizar.outputs.mudou == 'true'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          python testes.py 2>&1 | tail -n 40 | tee resultado_testes.txt
+          {
+            echo ""
+            echo "### Testes offline"
+            echo '```'
+            tail -n 5 resultado_testes.txt
+            echo '```'
+          } >> relatorio_atualizacao.md
+
       - name: Abrir Pull Request com a base atualizada
-        if: steps.atualizar.outputs.mudou == 'true' && vars.PUBLICAR_DIRETO != 'true'
+        # Com PUBLICAR_DIRETO = true mas testes falhando, abre PR para revisão em vez de publicar.
+        if: steps.atualizar.outputs.mudou == 'true' && (vars.PUBLICAR_DIRETO != 'true' || steps.testes.outcome != 'success')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -59,12 +77,14 @@ jobs:
           git add -A -- '*.pdf' base_status.json
           git commit -m "Atualiza PDFs da base (Sebrae e Receita Federal)"
           git push origin "$ramo"
+          titulo="Atualiza PDFs da base ($(date +%d/%m/%Y))"
+          if [ "${{ steps.testes.outcome }}" != "success" ]; then titulo="⚠️ $titulo — testes falharam"; fi
           gh pr create --base "${{ github.event.repository.default_branch }}" --head "$ramo" \
-            --title "Atualiza PDFs da base ($(date +%d/%m/%Y))" \
+            --title "$titulo" \
             --body-file relatorio_atualizacao.md
 
-      - name: Publicar direto no ramo principal
-        if: steps.atualizar.outputs.mudou == 'true' && vars.PUBLICAR_DIRETO == 'true'
+      - name: Publicar direto no ramo principal (só com os testes passando)
+        if: steps.atualizar.outputs.mudou == 'true' && vars.PUBLICAR_DIRETO == 'true' && steps.testes.outcome == 'success'
         run: |
           set -e
           git config user.name  "fiscon-atualizador"
@@ -74,7 +94,7 @@ jobs:
           git push origin HEAD:${{ github.event.repository.default_branch }}
 
       - name: Pedir novo deploy ao Render (opcional)
-        if: env.HOOK != ''
+        if: env.HOOK != '' && steps.testes.outcome != 'failure'
         run: curl -fsS -X POST "$HOOK" > /dev/null && echo "Deploy solicitado ao Render."
 
       - name: Pedir coleta dos sites oficiais ao servidor (opcional)

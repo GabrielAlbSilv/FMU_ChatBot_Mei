@@ -15,7 +15,6 @@ em `url_permitida()`. Isso é checado antes de cada download E a cada redirecion
 Só biblioteca padrão do Python (sem dependências novas).
 """
 import json
-import os
 import re
 import threading
 import time
@@ -28,14 +27,16 @@ from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
+import config as C
+
 # ----------------------------------------------------------------------- configuração
 # Liga/desliga a conferência (VERIFICAR_SITES=0 no .env volta ao comportamento anterior).
-ATIVO = os.getenv("VERIFICAR_SITES", "1") != "0"
+ATIVO = C.VERIFICAR_SITES
 # Usa um buscador (DuckDuckGo) APENAS para descobrir endereços dentro dos sites permitidos.
 # Nada do buscador é usado como fonte: só as páginas que passam em url_permitida().
 # Desligado por padrão: o DuckDuckGo bloqueia servidores (anti-robô) e só gastava tempo. A descoberta
 # de páginas para qualquer pergunta agora é feita por pesquisa.py (sitemaps + busca interna dos sites).
-BUSCA_DESCOBERTA = os.getenv("VERIFICAR_BUSCA_DESCOBERTA", "0") != "0"
+BUSCA_DESCOBERTA = C.VERIFICAR_BUSCA_DESCOBERTA
 
 # (domínio, prefixo de caminho obrigatório). O gov.br é um portal de TODO o governo, por isso
 # só o caminho /receitafederal é aceito (não vale gov.br/fazenda, gov.br/mei etc.).

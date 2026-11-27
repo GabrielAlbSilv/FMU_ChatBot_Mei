@@ -293,6 +293,9 @@ function nomeDocumento(arquivo) {
 const ICONE_DOC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>';
 const ICONE_EXTERNO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg>';
 const ICONE_COPIAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1"/></svg>';
+// Avaliação da resposta (👍 / 👎): vai para POST /api/feedback e entra nas métricas do servidor
+const ICONE_UTIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v10H4a1 1 0 01-1-1v-8a1 1 0 011-1h3z"/><path d="M7 10l4-7a2 2 0 012.6 1.9V9h5a2 2 0 012 2.3l-1.2 7A2 2 0 0117.4 20H7"/></svg>';
+const ICONE_NAO_UTIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g transform="rotate(180 12 12)"><path d="M7 10v10H4a1 1 0 01-1-1v-8a1 1 0 011-1h3z"/><path d="M7 10l4-7a2 2 0 012.6 1.9V9h5a2 2 0 012 2.3l-1.2 7A2 2 0 0117.4 20H7"/></g></svg>';
 const ICONE_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>';
 const MAX_FONTES = 6;
 
@@ -639,6 +642,7 @@ function finalizarBot(partes, dados, surgir = false) {
   libras.title = "Ver esta resposta em Libras (VLibras)";
   libras.addEventListener("click", () => window.FiscOnLibras && window.FiscOnLibras.traduzir(partes.balao));
   ferramentas.appendChild(libras);
+  if (dados.id) ferramentas.appendChild(criarAvaliacao(dados));
   partes.corpo.appendChild(ferramentas);
 
   if (surgir) {
@@ -648,6 +652,49 @@ function finalizarBot(partes, dados, surgir = false) {
     });
     rolarParaBaixo();
   }
+}
+
+// Botões "Útil" / "Não ajudou" de cada resposta. O voto fica salvo junto da conversa no navegador.
+function criarAvaliacao(dados) {
+  const caixa = document.createElement("span");
+  caixa.className = "avaliacao";
+  caixa.setAttribute("role", "group");
+  caixa.setAttribute("aria-label", "Esta resposta ajudou?");
+  const opcoes = [["util", ICONE_UTIL, "Útil", "Esta resposta ajudou"],
+                  ["nao_util", ICONE_NAO_UTIL, "Não ajudou", "Esta resposta não ajudou"]];
+  const botoes = opcoes.map(([voto, icone, rotulo, titulo]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "botao-ferramenta botao-voto vlibras-links";
+    b.dataset.voto = voto;
+    b.title = titulo;
+    b.innerHTML = `${icone}<span>${rotulo}</span>`;
+    b.setAttribute("aria-pressed", String(dados.voto === voto));
+    if (dados.voto === voto) b.classList.add("votado");
+    b.addEventListener("click", () => enviarVoto(dados, voto, botoes));
+    caixa.appendChild(b);
+    return b;
+  });
+  return caixa;
+}
+
+async function enviarVoto(dados, voto, botoes) {
+  if (dados.voto === voto) return;
+  dados.voto = voto;
+  botoes.forEach((b) => {
+    const marcado = b.dataset.voto === voto;
+    b.classList.toggle("votado", marcado);
+    b.setAttribute("aria-pressed", String(marcado));
+  });
+  salvarConversa();
+  try {
+    await fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: dados.id, voto }),
+    });
+    avisar(voto === "util" ? "Obrigado pela avaliação!" : "Obrigado! Isso ajuda a melhorar o FiscOn.");
+  } catch (_) { /* sem conexão: o voto fica só no navegador */ }
 }
 
 function mostrarBot(dados) {
@@ -955,7 +1002,7 @@ async function enviarPergunta(pergunta) {
     const dados = {
       papel: "assistant", texto: final.resposta, fontes: final.fontes, paginas_oficiais: final.paginas_oficiais,
       acoes: final.acoes, sugestoes: final.sugestoes, verificacao: final.verificacao,
-      fatos: final.fatos, ajuste_regras: final.ajuste_regras,
+      fatos: final.fatos, ajuste_regras: final.ajuste_regras, id: final.id,
     };
     finalizarBot(partes, dados, true);
     // voz.js decide se lê em voz alta (pergunta feita falando / "ler todas as respostas")

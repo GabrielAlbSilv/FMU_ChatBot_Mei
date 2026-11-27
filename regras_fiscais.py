@@ -9,6 +9,11 @@ regras_fiscais.json (editável pela equipe do NAF) e devolve "fatos" prontos. O 
      contradiz um fato, troca pela resposta montada só com os fatos.
 O verificador.py usa `contradiz()` para recusar uma "Resposta atualizada" que contradiga um fato.
 
+Dados da conversa: as regras de texto (regex) leem faturamento, mês de abertura etc. A reescrita da
+pergunta feita pelo modelo pode SUGERIR dados que as regex não pegaram (`validar_dados_llm`), mas o
+código só aceita o que confirmar no texto do usuário (o número tem de estar lá; a atividade precisa de
+uma citação literal). O modelo nunca faz conta: só ajuda a ler.
+
 Só biblioteca padrão. Valores em Decimal (sem erro de arredondamento no limite de 20%).
 """
 import json
@@ -197,7 +202,13 @@ _TEMAS = {
                                   r"sem vender|nao teve faturamento|sem ter faturado"),
     "dasn": re.compile(r"\bdasn\b|declaracao anual|declaracao do mei"),
     "dirf": re.compile(r"\bdirf\b"),
+    # LC 238/2026
+    "empregados": re.compile(r"empregad|funcionari|ajudante|\bcontrat\w*\b[^.?!]{0,25}\b(pessoa|alguem|empregad|"
+                             r"funcionari|ajudante|colaborador)"),
+    "remissao": re.compile(r"perdao|perdoa|remissao|remitid|anistia|\blc\b.{0,10}238[^.?!]{0,40}divida|"
+                           r"dividas?[^.?!]{0,40}(cancelad|perdoad|zerad)|cancela\w* (as |das |de )?dividas?"),
 }
+TEMAS_VALIDOS = set(_TEMAS)
 
 
 def _temas(texto_sa):
@@ -299,18 +310,28 @@ def resumo_situacao(situacao):
 
 
 # ======================================================================== calculadoras
-def dados_mei(ano, regras=None):
+CAMPOS_DAS = ("salario_minimo", "inss_percentual", "icms", "iss")
+CAMPOS_LIMITE = ("teto_anual", "limite_mensal_proporcional")
+
+
+def dados_mei(ano, regras=None, exige=CAMPOS_DAS):
     """Regras do MEI para o ano. Se o ano não está em vigor/cadastrado, usa o último vigente.
 
+    `exige`: campos que precisam estar preenchidos (o DAS precisa do salário mínimo; o limite de
+    faturamento só do teto). Assim, quando a lei orçamentária confirmar o teto de 2027, basta trocar
+    "vigente" para true — o limite novo passa a valer mesmo antes de existir o salário mínimo de 2027.
     Devolve (dados, ano_usado, aviso).
     """
     regras = regras or carregar_regras()
     tabela = regras.get("mei", {})
     item = tabela.get(str(ano))
-    if item and item.get("vigente", True) and item.get("salario_minimo"):
+
+    def serve(v):
+        return v.get("vigente", True) and all(v.get(c) is not None for c in exige)
+
+    if item and serve(item):
         return item, ano, ""
-    vigentes = sorted(int(a) for a, v in tabela.items()
-                      if v.get("vigente", True) and v.get("salario_minimo") and int(a) <= ano)
+    vigentes = sorted(int(a) for a, v in tabela.items() if a.isdigit() and serve(v) and int(a) <= ano)
     if not vigentes:
         return None, None, ""
     usado = vigentes[-1]
@@ -319,12 +340,14 @@ def dados_mei(ano, regras=None):
         aviso = f"o teto de {brl(item['teto_anual'])} para {ano} ainda não está em vigor ({item.get('condicao', '')})"
     elif str(ano) not in tabela:
         aviso = f"ainda não há valores oficiais cadastrados para {ano}; usei os de {usado}"
+    elif item:
+        aviso = f"ainda faltam valores oficiais de {ano} no cadastro (ex.: salário mínimo); usei os de {usado}"
     return tabela[str(usado)], usado, aviso
 
 
 def valores_das(ano, regras=None):
     """{'inss','comercio','servicos','misto'} em Decimal para o ano (None se não cadastrado)."""
-    dados, usado, aviso = dados_mei(ano, regras)
+    dados, usado, aviso = dados_mei(ano, regras, CAMPOS_DAS)
     if not dados:
         return None
     inss = (_d(dados["salario_minimo"]) * _d(dados["inss_percentual"]) / 100).quantize(
@@ -337,25 +360,43 @@ def valores_das(ano, regras=None):
 
 
 def limite_mei(ano, mes_abertura=None, regras=None):
-    """Limite de faturamento do ano: proporcional (meses desde a abertura, contando o mês) ou anual."""
-    dados, usado, aviso = dados_mei(ano, regras)
+    """Limite de faturamento do ano: proporcional (meses desde a abertura, contando o mês) ou anual.
+
+    "previsto": valor que valeria pela lei nova ainda não em vigor para o ano (ex.: LC 238/2026 em
+    2027), para a resposta poder avisar; None quando o ano já está em vigor ou não tem previsão.
+    """
+    regras = regras or carregar_regras()
+    dados, usado, aviso = dados_mei(ano, regras, CAMPOS_LIMITE)
     if not dados:
         return None
-    if mes_abertura:
-        meses = 12 - int(mes_abertura) + 1
-        return {"valor": _d(dados["limite_mensal_proporcional"]) * meses, "meses": meses,
-                "proporcional": True, "ano": usado, "aviso": aviso, "fonte": dados.get("fonte")}
-    return {"valor": _d(dados["teto_anual"]), "meses": 12, "proporcional": False, "ano": usado,
-            "aviso": aviso, "fonte": dados.get("fonte")}
+    meses = 12 - int(mes_abertura) + 1 if mes_abertura else 12
+
+    def calcular(d):
+        return _d(d["limite_mensal_proporcional"]) * meses if mes_abertura else _d(d["teto_anual"])
+
+    previsto = None
+    item = regras.get("mei", {}).get(str(ano)) or {}
+    if usado != ano and item.get("vigente") is False and all(item.get(c) is not None for c in CAMPOS_LIMITE):
+        previsto = {"valor": calcular(item), "ano": ano, "condicao": item.get("condicao", ""),
+                    "mensal": _d(item["limite_mensal_proporcional"])}
+    return {"valor": calcular(dados), "meses": meses, "proporcional": bool(mes_abertura), "ano": usado,
+            "aviso": aviso, "fonte": dados.get("fonte"), "previsto": previsto}
 
 
-def avaliar_excesso(faturamento, ano, mes_abertura=None, ano_abertura=None, regras=None):
-    """Calcula excesso e efeitos do desenquadramento. mes_abertura só vale se for o ano de abertura."""
+def avaliar_excesso(faturamento, ano, mes_abertura=None, ano_abertura=None, regras=None, usar_previsto=False):
+    """Calcula excesso e efeitos do desenquadramento. mes_abertura só vale se for o ano de abertura.
+
+    usar_previsto=True: faz a conta com o limite da lei nova ainda não em vigor (cenário "se for confirmado").
+    """
     regras = regras or carregar_regras()
     ano_de_abertura = bool(mes_abertura and ano_abertura == ano)
     lim = limite_mei(ano, mes_abertura if ano_de_abertura else None, regras)
     if not lim:
         return None
+    if usar_previsto:
+        if not lim.get("previsto"):
+            return None
+        lim = dict(lim, valor=lim["previsto"]["valor"], ano=ano, aviso="", previsto=None)
     faturamento = _d(faturamento)
     excesso = faturamento - lim["valor"]
     regra = regras.get("desenquadramento", {})
@@ -445,6 +486,16 @@ def _ano_faturamento(sit):
     return sit["anos"][-1] if sit["anos"] else hoje().year
 
 
+def _resumo_excesso(r):
+    lim = r["limite"]
+    base = f"limite {'proporcional ' if lim['proporcional'] else ''}de {brl(lim['valor'])}"
+    if not r["houve_excesso"]:
+        return f"{base}: {brl(r['faturamento'])} fica dentro, **sem excesso**."
+    faixa = "acima de 20%" if r["acima_tolerancia"] else "até 20%"
+    return (f"{base}: **excesso de {brl(r['excesso'])} ({pct(r['percentual'])})**, {faixa} — desenquadramento com "
+            f"efeitos {r['efeito_texto'].split(' (')[0]}.")
+
+
 def _fato_excesso(sit, regras):
     if sit["faturamento"] is None or sit["faturamento"] <= 0:
         return None
@@ -453,6 +504,20 @@ def _fato_excesso(sit, regras):
     r = avaliar_excesso(sit["faturamento"], ano, ab.get("mes"), ab.get("ano"), regras)
     if not r:
         return None
+    previsto = avaliar_excesso(sit["faturamento"], ano, ab.get("mes"), ab.get("ano"), regras, usar_previsto=True)
+    if previsto and (previsto["houve_excesso"], previsto["acima_tolerancia"]) != (r["houve_excesso"],
+                                                                                  r["acima_tolerancia"]):
+        # A conclusão muda conforme o teto novo (LC 238/2026) seja ou não confirmado: mostra os dois
+        # cenários e NÃO fixa uma conclusão (para não "corrigir" uma resposta que cite o teto novo).
+        texto = (f"**A resposta depende de o novo teto de {ano} (Lei Complementar nº 238/2026) entrar em vigor**, o "
+                 f"que ainda depende da lei orçamentária. Faturamento informado: {brl(r['faturamento'])}.\n"
+                 f"- **Pela regra em vigor hoje:** {_resumo_excesso(r)}\n"
+                 f"- **Se o teto novo for confirmado:** {_resumo_excesso(previsto)}\n"
+                 f"{r['comunicacao']}").strip()
+        resumo = (f"Depende do teto de {ano}: regra atual — {_resumo_excesso(r)} Com a LC 238/2026 — "
+                  f"{_resumo_excesso(previsto)}").replace("**", "")
+        return _fato("excesso", texto, resumo, [_alts(r["limite"]["valor"]), _alts(previsto["limite"]["valor"])],
+                     r["fonte"], ano)
     lim = r["limite"]
     if lim["proporcional"]:
         mes_nome = MESES_EXIBICAO[int(ab["mes"]) - 1]
@@ -462,6 +527,7 @@ def _fato_excesso(sit, regras):
     else:
         base = f"O limite de faturamento do MEI em {ano} é de **{brl(lim['valor'])}** no ano."
     aviso = f" Observação: {lim['aviso']}." if lim.get("aviso") else ""
+    aviso += _texto_previsto(lim)
     chaves = [_alts(lim["valor"])]
     if not r["houve_excesso"]:
         texto = (f"**Não houve excesso.** {base} O faturamento informado, {brl(r['faturamento'])}, está dentro desse "
@@ -494,6 +560,17 @@ def _fato_excesso(sit, regras):
               f"desenquadramento com efeitos {r['efeito_texto'].split(' (')[0]}.")
     return _fato("excesso", texto, resumo, chaves, r["fonte"], ano,
                  conclusao={"tipo": "houve_excesso", "valor": True}, proibidos=proibidos)
+
+
+def _texto_previsto(lim):
+    """Frase sobre o limite da lei nova ainda não em vigor (ex.: 2027 pela LC 238/2026)."""
+    p = lim.get("previsto") if lim else None
+    if not p:
+        return ""
+    conta = (f"{brl(p['mensal'])} × {lim['meses']} meses = **{brl(p['valor'])}**" if lim.get("proporcional")
+             else f"**{brl(p['valor'])}**")
+    return (f" Se o novo teto de {p['ano']} da Lei Complementar nº 238/2026 entrar em vigor (depende da lei "
+            f"orçamentária), o limite passa a ser {conta}; até lá, vale o cálculo acima.")
 
 
 _PROIBIDOS_ISS = [r"\biss\b[^.\n]{0,40}r\$\s*6(?:,00)?\b", r"r\$\s*6(?:,00)?\b[^.\n]{0,20}\biss\b",
@@ -551,7 +628,7 @@ def _fato_sem_faturamento(sit, regras):
 def _fato_teto(sit, regras):
     tabela = regras.get("mei", {})
     anos = sorted({a for a in sit["anos"] if str(a) in tabela}) or \
-        sorted({a for a in (hoje().year, hoje().year + 1) if str(a) in tabela})
+        sorted({a for a in (hoje().year, hoje().year + 1, hoje().year + 2) if str(a) in tabela})
     if not anos:
         return None
     linhas, chaves, fonte = [], [], None
@@ -592,11 +669,66 @@ def _fato_dirf(sit, regras):
                  conclusao={"tipo": "dirf_extinta", "valor": True} if inicio else None)
 
 
+def _fato_empregados(sit, regras):
+    """Quantos empregados o MEI pode ter, por ano (LC 238/2026: até 2 a partir de 01/01/2027)."""
+    tabela = {a: v for a, v in regras.get("empregados", {}).items() if a.isdigit() and isinstance(v, dict)}
+    if not tabela:
+        return None
+    pedidos = sorted({a for a in sit["anos"] if str(a) in tabela})
+    if not pedidos:
+        pedidos = sorted({a for a in (hoje().year, hoje().year + 1) if str(a) in tabela})
+    if not pedidos:   # ano pedido sem cadastro: usa o último ano cadastrado que já vale
+        anteriores = sorted(int(a) for a in tabela if int(a) <= (sit["anos"][-1] if sit["anos"] else hoje().year))
+        pedidos = anteriores[-1:]
+    if not pedidos:
+        return None
+    linhas, chaves, validado = [], [], True
+    for a in pedidos:
+        item = tabela[str(a)]
+        n = int(item["maximo"])
+        quando = f"A partir de {item['vigencia']}" if item.get("vigencia") else f"Em {a}"
+        if n == 1:
+            linhas.append(f"**{quando}, o MEI pode ter 1 empregado**, que receba exclusivamente 1 salário mínimo ou "
+                          f"o piso da categoria.")
+            chaves.append(["1 empregado", "um empregado", "1 funcionario", "um funcionario", "um unico", "apenas um"])
+        else:
+            extra = f" Também {item['observacao']}." if item.get("observacao") else ""
+            linhas.append(f"**{quando}, o MEI pode ter até {n} empregados** (Lei Complementar nº 238/2026), cada um "
+                          f"recebendo exclusivamente 1 salário mínimo ou o piso da categoria.{extra}")
+            chaves.append([f"{n} empregados", "dois empregados", f"{n} funcionarios", "dois funcionarios",
+                           f"ate {n}", "ate dois"])
+        validado = validado and bool(item.get("validado_naf"))
+    texto = linhas[0] if len(linhas) == 1 else "\n".join(f"- {l}" for l in linhas)
+    ultimo = tabela[str(pedidos[-1])]
+    return _fato("empregados", texto, " ".join(l.replace("**", "") for l in linhas), chaves, ultimo.get("fonte"),
+                 pedidos[-1], validado=validado)
+
+
+def _fato_remissao(sit, regras):
+    """Perdão das dívidas do MEI com a União (LC 238/2026)."""
+    item = regras.get("remissao_lc238")
+    if not item or not item.get("texto"):
+        return None
+    venc = item.get("vencimento_ate", "")
+    efeito = item.get("efeitos_a_partir_de", "")
+    chaves = []
+    if venc:
+        dia, mes, ano = venc.split("/")
+        chaves.append([venc, f"{int(dia)} de {MESES_EXIBICAO[int(mes) - 1]}"])
+    chaves.append(["automatic*", "de oficio", "sem pedido", "sem precisar pedir", "nao precisa pedir",
+                   "nao e preciso pedir", "sem necessidade de pedido"])
+    resumo = (f"LC 238/2026: dívidas da contribuição previdenciária do MEI vencidas até {venc} são perdoadas "
+              f"automaticamente a partir de {efeito} (ICMS e ISS não entram); valores pagos não são devolvidos.")
+    ano = int(efeito[-4:]) if efeito[-4:].isdigit() else None
+    return _fato("remissao", item["texto"], resumo, chaves, item.get("fonte"), ano,
+                 validado=bool(item.get("validado_naf")))
+
+
 def _fato_limite_abertura(sit, regras):
     """Limite proporcional do ano de abertura, quando a pessoa ainda não disse quanto faturou."""
     ab = sit["abertura"]
     lim = limite_mei(ab["ano"], ab["mes"], regras)
-    dados, _, _ = dados_mei(ab["ano"], regras)
+    dados, _, _ = dados_mei(ab["ano"], regras, CAMPOS_LIMITE)
     if not lim or not dados or not lim["proporcional"]:
         return None
     mes_nome = MESES_EXIBICAO[int(ab["mes"]) - 1]
@@ -610,6 +742,9 @@ def _fato_limite_abertura(sit, regras):
              f"{brl(dados['teto_anual'])}. Se o faturamento passar do limite em até 20% (até {brl(teto_tol)}), o "
              f"desenquadramento vale a partir de 1º de janeiro de {ano + 1}; acima disso, é retroativo ao início "
              f"da atividade ({mes_nome} de {ano}).")
+    if lim.get("aviso"):
+        texto += f" Observação: {lim['aviso']}."
+    texto += _texto_previsto(lim)
     proibidos = [r"\blimite\b[^.]{0,30}\b(?:e|sera|fica|continua)\b[^.]{0,25}\b81(?:[.,]000| mil)"]
     return _fato("limite_abertura", texto,
                  f"Limite proporcional de {ano} para MEI aberto em {mes_nome}: {brl(lim['valor'])} "
@@ -619,15 +754,100 @@ def _fato_limite_abertura(sit, regras):
 
 _CALCULADORAS = [("irpf", _fato_irpf), ("excesso", _fato_excesso), ("limite_abertura", _fato_limite_abertura),
                  ("sem_faturamento", _fato_sem_faturamento),
-                 ("das_valor", _fato_das), ("teto", _fato_teto), ("dasn", _fato_dasn), ("dirf", _fato_dirf)]
+                 ("das_valor", _fato_das), ("teto", _fato_teto), ("dasn", _fato_dasn), ("dirf", _fato_dirf),
+                 ("empregados", _fato_empregados), ("remissao", _fato_remissao)]
 
 
-def fatos_para(pergunta, historico=None, regras=None):
-    """Lista de fatos calculados para a pergunta (vazia se nenhuma regra se aplica)."""
+# ============================================================ dados sugeridos pelo modelo (validados)
+def _numero(valor):
+    """50000, 50000.0, "50.000,00", "50 mil" -> Decimal; None se não der para ler."""
+    if valor is None or isinstance(valor, bool):
+        return None
+    if isinstance(valor, (int, float)):
+        return _d(valor)
+    achados = _valores_monetarios(f"R$ {valor}")
+    return achados[0][1] if achados else None
+
+
+def _inteiro(valor):
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def validar_dados_llm(dados, pergunta, historico=None):
+    """Fica só com o que a reescrita do modelo sugeriu E dá para confirmar no texto do USUÁRIO.
+
+    - faturamento/rendimento: o mesmo valor tem de aparecer como dinheiro numa mensagem do usuário;
+    - mês/ano de abertura: o mês (nome, abreviação ou "07/2026") e o ano têm de estar no texto;
+    - atividade: precisa de "evidencia_atividade", um trecho LITERAL do usuário (ex.: "sou manicure");
+    - temas: só os nomes conhecidos (TEMAS_VALIDOS).
+    Devolve um dicionário só com os campos aceitos (vazio se nada confere).
+    """
+    if not isinstance(dados, dict):
+        return {}
+    textos = _mensagens_usuario(historico) + [str(pergunta or "")]
+    todo = _sem_acento("\n".join(textos))
+    valores = {v for t in textos for _, v in _valores_monetarios(t)}
+    aceitos = {}
+    for campo in ("faturamento", "rendimento"):
+        v = _numero(dados.get(campo))
+        if v is not None and v > 0 and v in valores:
+            aceitos[campo] = v
+    mes, ano = _inteiro(dados.get("mes_abertura")), _inteiro(dados.get("ano_abertura"))
+    if mes and 1 <= mes <= 12:
+        nome = MESES[mes - 1]
+        if re.search(rf"\b{nome}\b|\b{nome[:3]}\s*/\s*20\d\d|\b0?{mes}\s*/\s*20\d\d\b", todo):
+            if ano and not re.search(rf"(?<!\d){ano}(?!\d)", todo):
+                ano = None
+            aceitos["abertura"] = {"mes": mes, "ano": ano}
+    atividade, evidencia = dados.get("atividade"), dados.get("evidencia_atividade")
+    if atividade in ("servicos", "comercio", "misto") and isinstance(evidencia, str):
+        ev = re.sub(r"\s+", " ", _sem_acento(evidencia)).strip(" .,!?\"'")
+        if len(ev) >= 3 and ev in re.sub(r"\s+", " ", todo):
+            aceitos["atividade"] = atividade
+    temas = dados.get("temas")
+    if isinstance(temas, list):
+        validos = {t for t in temas if isinstance(t, str) and t in TEMAS_VALIDOS}
+        if validos:
+            aceitos["temas"] = validos
+    return aceitos
+
+
+def completar_situacao(sit, extras):
+    """Junta os dados aceitos do modelo à situação lida pelas regex (o que a regex leu sempre vale)."""
+    if not extras:
+        return sit
+    for campo, outro in (("faturamento", "rendimento"), ("rendimento", "faturamento")):
+        v = extras.get(campo)
+        if v is not None and sit.get(campo) is None and sit.get(outro) != v:
+            sit[campo] = v
+    if extras.get("abertura") and not sit.get("abertura"):
+        ab = dict(extras["abertura"])
+        if ab.get("ano") is None:
+            ab["ano"] = sit["anos"][-1] if sit.get("anos") else hoje().year
+        sit["abertura"] = ab
+    if extras.get("atividade") and not sit.get("atividade"):
+        sit["atividade"] = extras["atividade"]
+    if extras.get("temas") and not sit.get("temas"):
+        sit["temas"] = set(extras["temas"])
+    return sit
+
+
+def analisar(pergunta, historico=None, extras=None, regras=None):
+    """(fatos, situação) da pergunta. `extras` = dados do modelo já validados (validar_dados_llm)."""
     regras = regras or carregar_regras()
-    if not regras:
-        return []
-    sit = extrair_situacao(pergunta, historico)
+    sit = completar_situacao(extrair_situacao(pergunta, historico), extras)
+    return (_fatos_da_situacao(sit, pergunta, regras) if regras else []), sit
+
+
+def fatos_para(pergunta, historico=None, regras=None, extras=None):
+    """Lista de fatos calculados para a pergunta (vazia se nenhuma regra se aplica)."""
+    return analisar(pergunta, historico, extras, regras)[0]
+
+
+def _fatos_da_situacao(sit, pergunta, regras):
     temas = set(sit["temas"])
     tem_faturamento = sit["faturamento"] is not None and sit["faturamento"] > 0
     if tem_faturamento and (sit["abertura"] or "teto" in temas or "limite" in temas):
@@ -803,3 +1023,22 @@ def bloco_prompt(fatos):
     linhas = "\n\n".join(f"FATO {i} ({f['tema']}, ano {f.get('ano')}):\n{f['texto']}" for i, f in enumerate(fatos, 1))
     return ("FATOS CALCULADOS pelas regras oficiais cadastradas (valores, limites, prazos e conclusões já "
             "conferidos; PREVALECEM sobre os trechos dos documentos e sobre o seu conhecimento):\n" + linhas)
+
+
+def pendentes_validacao(regras=None):
+    """Regras cadastradas que a equipe do NAF ainda não conferiu (validado_naf != true).
+
+    Aparece nos detalhes de /api/status e no aviso do servidor ao iniciar, para ninguém esquecer.
+    Ex.: ["mei/2026", "irpf/2025", "remissao_lc238"].
+    """
+    regras = regras or carregar_regras()
+    pendentes = []
+    for chave, valor in regras.items():
+        if not isinstance(valor, dict) or chave.startswith("_"):
+            continue
+        if "validado_naf" in valor and not valor.get("validado_naf"):
+            pendentes.append(chave)
+        for sub, item in valor.items():
+            if isinstance(item, dict) and "validado_naf" in item and not item.get("validado_naf"):
+                pendentes.append(f"{chave}/{sub}")
+    return pendentes

@@ -529,6 +529,11 @@ a.fonte:hover { border-color: var(--vermelho-borda); color: var(--vermelho); bac
 }
 .botao-ferramenta:hover { background: var(--bot); color: var(--texto); }
 .botao-ferramenta.copiado { color: var(--ok); }
+/* avaliação da resposta (Útil / Não ajudou) */
+.avaliacao { display: inline-flex; gap: 2px; margin-left: 4px; padding-left: 6px; border-left: 1px solid var(--borda, rgba(127,127,127,.25)); }
+.botao-voto.votado { color: var(--ok); background: var(--bot); }
+.botao-voto[data-voto="nao_util"].votado { color: var(--vermelho); }
+@media (max-width: 600px) { .botao-voto span { display: none; } }
 .botao-ferramenta svg { width: 15px; height: 15px; }
 .botao-repetir { color: var(--vermelho); border: 1px solid var(--vermelho-borda); }
 .botao-repetir:hover { background: var(--vermelho-claro); color: var(--vermelho); }

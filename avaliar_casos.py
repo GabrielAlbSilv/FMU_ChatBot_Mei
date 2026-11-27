@@ -2,13 +2,17 @@
 
 Roda as perguntas que reprovaram a divulgação (NAF e FiscOn), em uma mensagem e em duas, e confere
 se cada resposta final traz os valores esperados e não traz os errados. Gera relatorio_reteste.md
-para a equipe do NAF revisar ANTES da divulgação.
+para a equipe do NAF revisar ANTES da divulgação e acrescenta uma linha em
+relatorios/historico_avaliacoes.jsonl (data, versão, modelo, acertos) — assim dá para ver, versão a
+versão, se o bot melhorou ou piorou. Esse arquivo pode ir para o GitHub (não tem dado pessoal).
 
 Uso (precisa do .env com GROQ_API_KEY e das bibliotecas do requirements.txt):
     python avaliar_casos.py            -> todos os casos
     python avaliar_casos.py --sem-sites -> sem a conferência com Sebrae/Receita (mais rápido)
 """
+import json
 import os
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -69,6 +73,20 @@ CASOS = [
     ("Teto MEI 2026 e 2027 (LC 238/2026)",
      ["Qual era o teto do MEI em 2026 e qual estava previsto para 2027 pela LC nº 238/2026?"],
      [["81.000", "81 mil"], ["110.000", "110 mil"], ["orçament"]], ["não encontrei"]),
+    ("Teto MEI 2028 (LC 238/2026)",
+     ["Qual será o teto do MEI em 2028?"],
+     [["140.000", "140 mil"]], ["não encontrei"]),
+    ("Empregados em 2027 (LC 238/2026)",
+     ["Em 2027, quantos funcionários o MEI vai poder contratar?"],
+     [["2 empregados", "dois empregados", "até 2", "até dois", "2 funcionários", "dois funcionários"]],
+     ["apenas um empregado", "somente um empregado"]),
+    ("Perdão das dívidas do MEI (LC 238/2026)",
+     ["Ouvi falar que as dívidas do MEI foram perdoadas. Preciso pedir? Vale para o ICMS e o ISS?"],
+     [["13/10/2026", "13 de outubro"], ["automátic", "de ofício", "sem pedido", "não precisa pedir"]],
+     []),
+    ("MEI aberto em julho/2027, R$ 50 mil (depende do teto novo)",
+     ["Um MEI abriu em julho de 2027 e faturou R$ 50 mil até dezembro. Houve excesso?"],
+     [["40.500"], ["55.000"]], []),
 ]
 
 
@@ -98,7 +116,7 @@ def main():
     linhas = [f"# Reteste dos casos do relatório — {datetime.now():%d/%m/%Y %H:%M}", "",
               f"Versão: `{rag.VERSAO}` · conferência com sites: {'ligada' if rag.verificador.ATIVO else 'desligada'}",
               "", "| Caso | Resultado | Ajuste pelas regras | Observação |", "|---|---|---|---|"]
-    detalhes, aprovados = [], 0
+    detalhes, aprovados, reprovados = [], 0, []
     for nome, mensagens, deve, nao_pode in CASOS:
         rag._cache.clear()
         historico, final = [], None
@@ -109,6 +127,8 @@ def main():
         faltou, proibido = avaliar(final["resposta"], deve, nao_pode)
         ok = not faltou and not proibido
         aprovados += ok
+        if not ok:
+            reprovados.append(nome)
         obs = "; ".join([f"faltou: {f}" for f in faltou] + [f"não podia ter: {p}" for p in proibido]) or "—"
         linhas.append(f"| {nome} | {'✅ ok' if ok else '❌ falhou'} | {final.get('ajuste_regras') or '—'} | {obs} |")
         detalhes += [f"## {nome}", ""] + [f"> **Usuário:** {m}" for m in mensagens] + \
@@ -117,8 +137,27 @@ def main():
     linhas += ["", f"**{aprovados}/{len(CASOS)} casos corretos.** Revisão do NAF: ☐ aprovado ☐ ajustar", "",
                "---", ""] + detalhes
     (AQUI / "relatorio_reteste.md").write_text("\n".join(linhas), encoding="utf-8")
-    print(f"\n{aprovados}/{len(CASOS)} corretos. Relatório: relatorio_reteste.md")
+    _gravar_historico(rag, aprovados, reprovados)
+    print(f"\n{aprovados}/{len(CASOS)} corretos. Relatório: relatorio_reteste.md "
+          "(histórico: relatorios/historico_avaliacoes.jsonl)")
     sys.exit(0 if aprovados == len(CASOS) else 1)
+
+
+def _gravar_historico(rag, aprovados, reprovados):
+    """Uma linha JSON por rodada em relatorios/historico_avaliacoes.jsonl (compare versões com ele)."""
+    try:
+        commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
+                                cwd=AQUI, timeout=5).stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        commit = None
+    linha = {"data": datetime.now().isoformat(timespec="seconds"), "versao": rag.VERSAO, "commit": commit,
+             "modelo": rag.MODELO_LLM, "modelo_embeddings": rag.NOME_MODELO_EMB,
+             "conferencia_sites": rag.verificador.ATIVO, "casos": len(CASOS), "aprovados": aprovados,
+             "percentual": round(100 * aprovados / len(CASOS), 1), "reprovados": reprovados}
+    pasta = AQUI / "relatorios"
+    pasta.mkdir(exist_ok=True)
+    with open(pasta / "historico_avaliacoes.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(linha, ensure_ascii=False) + "\n")
 
 
 if __name__ == "__main__":

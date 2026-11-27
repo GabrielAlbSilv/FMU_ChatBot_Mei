@@ -36,11 +36,12 @@
 	- python atualizar_base.py            -> baixa o que mudou e troca os PDFs (valida antes de substituir)
 	  python atualizar_base.py --simular  -> só mostra o que mudaria
 	  python atualizar_base.py --reindexar-> após atualizar, refaz o índice (uso local)
-	- Automático: .github/workflows/atualizar-base.yml roda toda segunda e abre um Pull Request se algum
+	- Automático: .github/workflows/atualizar-base.yml roda todo dia (06:17) e abre um Pull Request se algum
 	  PDF mudou. Ao aprovar, o Render faz o deploy e refaz o índice. (Ative em Settings > Actions >
 	  General: "Read and write permissions" e "Allow GitHub Actions to create and approve pull requests".)
 	- O índice local também se refaz sozinho se algum PDF mudar (assinatura dos arquivos).
-	- Testes offline: python testes.py
+	- Antes de publicar, o workflow roda os testes com os PDFs novos; com PUBLICAR_DIRETO=true ele só publica
+	  se os testes passarem (se falharem, abre um Pull Request marcado com ⚠️ para revisão).
 	- Só entram PDFs de 2026 em diante (ano_minimo em fontes_pdfs.json). python atualizar_base.py --auditar mostra
 	  o ano de cada PDF; --arquivar-antigos move os anteriores a 2026 para pdfs_arquivados/ (não são apagados).
 	- IMPORTANTE: rode  python atualizar_base.py  (ou o workflow) ANTES de publicar: sem isso a base fica só com
@@ -129,3 +130,18 @@
 	    python diagnosticar_verificacao.py "Posso pegar empréstimo como MEI?" --rascunho "O MEI pode pedir crédito..."
 	- Ajustes (.env): PESQUISA_ATIVA=0 desliga; PESQUISA_LIMIAR=0.5 (rigor para "trata do assunto").
 	  VERIFICAR_BUSCA_DESCOBERTA=1 religa o DuckDuckGo (padrão agora é 0, porque ele bloqueia servidores).
+
+17. Novidades desta versão (resumo; detalhes no README.md):
+	- Lei Complementar 238/2026 em regras_fiscais.json: teto de R$ 110 mil (2027) e R$ 140 mil (2028), ambos
+	  ainda condicionados à lei orçamentária ("vigente": false); até 2 empregados a partir de 01/01/2027;
+	  perdão automático das dívidas da contribuição previdenciária do MEI vencidas até 13/10/2026.
+	  QUANDO a lei orçamentária confirmar o teto: troque "vigente" para true em "mei" > "2027".
+	- Toda a configuração (.env) fica em config.py. Testes em tests/ (um arquivo por assunto): python testes.py
+	- Privacidade: CPF, CNPJ, e-mail e telefone digitados viram "[CPF]" etc. antes de logs e da Groq.
+	- /api/status público mostra só o básico. Detalhes e métricas: cabeçalho X-Token com o STATUS_TOKEN
+	  (Render > Environment). Ex.: curl -H "X-Token: SUA_SENHA" https://chatbot-mei.onrender.com/api/status
+	- Botões "Útil / Não ajudou" em cada resposta: os votos aparecem nos logs ([FEEDBACK]) e nas métricas.
+	- Limite por IP usa o IP real (Cloudflare); há também um limite global (LIMITE_GLOBAL) por minuto.
+	- python avaliar_busca.py <modelo>   compara modelos de embeddings (acertos e memória) antes de trocar.
+	- python avaliar_casos.py grava o resultado em relatorios/historico_avaliacoes.jsonl (compare versões).
+	- Opcional: .github/workflows/manter-acordado.yml evita que o servidor gratuito durma (ver o arquivo).

@@ -1,8 +1,12 @@
 """Servidor web do FiscOn — Chatbot MEI e Receita Federal (Flask).
 
 - Serve a página (static/index.html, style.css, script.js)
-- Expõe a API:  GET /api/status   e   POST /api/chat
+- Expõe a API:  GET /api/status, POST /api/chat, POST /api/feedback, POST /api/voz/transcrever
 Para testar localmente:  python app.py   ->  http://localhost:5000
+
+Proteções: limite de perguntas por IP (IP real vindo do Cloudflare, não do X-Forwarded-For, que pode
+ser falsificado) e um limite GLOBAL por minuto, que protege a cota da GROQ_API_KEY mesmo se alguém
+trocar de IP. /api/status mostra só o básico; os detalhes técnicos exigem o cabeçalho X-Token.
 
 IMPORTANTE: a inicialização do RAG roda em uma thread que é iniciada DENTRO do
 processo que atende as requisições (worker do gunicorn), nunca só no import.
@@ -27,6 +31,7 @@ import sys
 import threading
 import time
 import traceback
+import uuid
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -36,12 +41,16 @@ from flask import (Flask, Response, abort, jsonify, request, send_from_directory
 
 load_dotenv()
 
+import config as C  # noqa: E402
+import metricas  # noqa: E402
+
 app = Flask(__name__, static_folder="static", static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024   # maior pedido aceito (áudio da voz incluído)
 
-TAMANHO_MAX_PERGUNTA = 1000
-LIMITE_REQUISICOES = 15      # por IP...
-JANELA_SEGUNDOS = 60         # ...a cada 60 segundos
+TAMANHO_MAX_PERGUNTA = C.TAMANHO_MAX_PERGUNTA
+LIMITE_REQUISICOES = C.LIMITE_POR_IP      # por IP...
+LIMITE_GLOBAL = C.LIMITE_GLOBAL           # ...e de todas as pessoas juntas...
+JANELA_SEGUNDOS = C.JANELA_SEGUNDOS       # ...a cada N segundos
 
 _AQUI = Path(__file__).resolve().parent
 _ARQ_RAG = _AQUI / "rag.py"
@@ -109,6 +118,7 @@ def _preparar_rag():
 
         estado["retriever"], estado["llm"] = rag.iniciar_rag()
         print(f"[INFO] Chatbot pronto em {time.time() - inicio:.1f}s", flush=True)
+        _avisar_pendencias()
         estado["pronto"] = True
         _iniciar_base_web()
         faulthandler.cancel_dump_traceback_later()
@@ -117,6 +127,18 @@ def _preparar_rag():
         estado["erro"] = f"{type(erro).__name__}: {erro}"
         print(f"[ERRO] Falha ao iniciar o RAG: {erro}", flush=True)
         traceback.print_exc()
+
+
+def _avisar_pendencias():
+    """Lembra, nos logs, das regras fiscais que o NAF ainda não conferiu."""
+    try:
+        import regras_fiscais
+        pendentes = regras_fiscais.pendentes_validacao()
+        if pendentes:
+            print(f"[AVISO] Regras fiscais ainda não validadas pelo NAF (validado_naf=false): {pendentes}",
+                  flush=True)
+    except Exception as erro:  # noqa: BLE001
+        print(f"[ERRO] não consegui conferir as regras fiscais: {erro}", flush=True)
 
 
 def _modulo_base_web():
@@ -169,9 +191,32 @@ def _antes_de_cada_requisicao():
 
 _ultima_limpeza = [0.0]
 _trava_acessos = threading.Lock()
+_GLOBAL = "__todos__"
 
 
-def _excedeu_limite(ip):
+def ip_cliente():
+    """IP real de quem fez o pedido.
+
+    No Render há um Cloudflare na frente do servidor: ele preenche True-Client-IP / CF-Connecting-IP com
+    o IP verdadeiro e o cliente não consegue mudar esses valores. O X-Forwarded-For NÃO é usado: o Render
+    só acrescenta valores a ele, então o primeiro IP da lista pode ser inventado por quem faz o pedido
+    (e burlaria o limite por IP). Sem esses cabeçalhos (ex.: rodando local), usa o IP da conexão.
+    """
+    for cabecalho in dict.fromkeys((C.CABECALHO_IP, "True-Client-IP", "CF-Connecting-IP")):
+        valor = (request.headers.get(cabecalho) or "").strip()
+        if valor and re.fullmatch(r"[0-9a-fA-F:.]{3,45}", valor):
+            return valor
+    return request.remote_addr or "?"
+
+
+def _consumir(fila, agora, limite):
+    while fila and agora - fila[0] > JANELA_SEGUNDOS:
+        fila.popleft()
+    return len(fila) < limite
+
+
+def _excedeu_limite(ip, global_tambem=True):
+    """True (e motivo) se o IP ou o servidor todo passou do limite da janela. Conta o pedido se não passou."""
     agora = time.time()
     with _trava_acessos:
         # De tempos em tempos esquece os IPs que não perguntam nada há mais de uma janela
@@ -181,12 +226,23 @@ def _excedeu_limite(ip):
                 del _acessos[chave]
             _ultima_limpeza[0] = agora
         fila = _acessos[ip]
-        while fila and agora - fila[0] > JANELA_SEGUNDOS:
-            fila.popleft()
-        if len(fila) >= LIMITE_REQUISICOES:
-            return True
+        if not _consumir(fila, agora, LIMITE_REQUISICOES):
+            return "ip"
+        if global_tambem:
+            todos = _acessos[_GLOBAL]
+            if not _consumir(todos, agora, LIMITE_GLOBAL):
+                return "global"
+            todos.append(agora)
         fila.append(agora)
-        return False
+        return None
+
+
+def _resposta_limite(motivo, coisa="perguntas"):
+    if motivo == "global":
+        metricas.registrar_erro("limite_global")
+        return jsonify(erro="Muitas pessoas estão usando o chatbot agora. Tente de novo em cerca de 1 minuto."), 429
+    metricas.registrar_erro("limite_ip")
+    return jsonify(erro=f"Muitas {coisa} em pouco tempo. Aguarde um instante."), 429
 
 
 @app.after_request
@@ -194,6 +250,8 @@ def _cabecalhos_de_seguranca(resposta):
     """Cabeçalhos básicos de proteção (não mudam nada no funcionamento das páginas)."""
     resposta.headers.setdefault("X-Content-Type-Options", "nosniff")
     resposta.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resposta.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resposta.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=(self)")
     return resposta
 
 
@@ -208,26 +266,49 @@ def pagina_chat():
     return send_from_directory(app.static_folder, "chat.html")
 
 
+def _tem_token():
+    """Pedido traz o cabeçalho X-Token certo (STATUS_TOKEN ou, se não houver, BASE_WEB_TOKEN)?"""
+    token = C.STATUS_TOKEN
+    return bool(token) and hmac.compare_digest(request.headers.get("X-Token", ""), token)
+
+
 @app.get("/api/status")
 def status():
-    # Sempre 200 (serve também de health check do Render)
+    """Sempre 200 (serve também de health check do Render).
+
+    Público: só o que as páginas usam (pronto/erro/etapa, documentos e data da base). Com o cabeçalho
+    X-Token: detalhes técnicos (pilha da inicialização, PID, hash do código, métricas, configuração,
+    PDFs faltando e regras ainda não validadas pelo NAF).
+    """
     modulo = sys.modules.get("rag_mei")
-    etapa = getattr(modulo, "ETAPA", estado["etapa"])
+    etapa = modulo.etapa_atual() if modulo and hasattr(modulo, "etapa_atual") else \
+        getattr(modulo, "ETAPA", estado["etapa"])
     iniciando = not estado["pronto"] and not estado["erro"]
+    web = _status_base_web()
     dados = dict(
         pronto=estado["pronto"],
-        erro=estado["erro"],
+        erro="indisponível" if estado["erro"] else None,
         etapa=etapa,
         segundos=int(time.time() - estado["t0"]),
-        pid=os.getpid(),
-        thread_init_viva=any(t.name == "init-rag" for t in threading.enumerate()),
-        commit=(os.getenv("RENDER_GIT_COMMIT") or "?")[:8],
-        indice_no_disco=(_AQUI / "indice" / "vetores.npy").is_file(),
-        pdfs_indexados=_pdfs_indexados(),
         base_atualizada_em=_base_atualizada_em(),
-        base_web=_status_base_web(),
+        base_web={k: web.get(k) for k in ("ativa", "paginas", "atualizada_em")},
         documentos=[{"arquivo": a, "titulo": i.get("titulo"), "ano": i.get("ano")}
                     for a, i in sorted(getattr(modulo, "_info_docs", {}).items())],
+    )
+    if not _tem_token():
+        return jsonify(**dados)
+    dados.update(
+        erro=estado["erro"],
+        pid=os.getpid(),
+        thread_init_viva=any(t.name == "init-rag" for t in threading.enumerate()),
+        commit=C.COMMIT,
+        indice_no_disco=(_AQUI / "indice" / "vetores.npy").is_file(),
+        pdfs_indexados=_pdfs_indexados(),
+        pdfs_faltando=_pdfs_faltando(),
+        regras_nao_validadas=_regras_pendentes(),
+        base_web=web,
+        metricas=metricas.resumo(),
+        config=C.publico(),
         **_info_arquivo_rag(),
     )
     if iniciando:
@@ -235,6 +316,22 @@ def status():
         if quadro is not None:
             dados["pilha_thread_init"] = "".join(traceback.format_stack(quadro)).splitlines()[-12:]
     return jsonify(**dados)
+
+
+def _pdfs_faltando():
+    try:
+        import busca
+        return busca.pdfs_faltando()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _regras_pendentes():
+    try:
+        import regras_fiscais
+        return regras_fiscais.pendentes_validacao()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _status_base_web():
@@ -249,7 +346,7 @@ def atualizar_base_web():
     Só funciona se a variável BASE_WEB_TOKEN estiver definida e o pedido trouxer o cabeçalho
     X-Token com o mesmo valor. A coleta roda em segundo plano; a resposta volta na hora.
     """
-    token = os.getenv("BASE_WEB_TOKEN")
+    token = C.BASE_WEB_TOKEN
     if not token or not hmac.compare_digest(request.headers.get("X-Token", ""), token):
         abort(404)
     modulo = _modulo_base_web()
@@ -266,9 +363,9 @@ def chat():
     if not estado["pronto"]:
         return jsonify(erro="O chatbot ainda está sendo preparado. Aguarde alguns segundos."), 503
 
-    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "?").split(",")[0].strip()
-    if _excedeu_limite(ip):
-        return jsonify(erro="Muitas perguntas em pouco tempo. Aguarde um instante."), 429
+    motivo = _excedeu_limite(ip_cliente())
+    if motivo:
+        return _resposta_limite(motivo)
 
     dados = request.get_json(silent=True) or {}
     pergunta = str(dados.get("pergunta", "")).strip()
@@ -284,6 +381,7 @@ def chat():
 
     rag = estado["rag"]
     fluxo = rag.responder_stream(estado["retriever"], estado["llm"], pergunta, historico)
+    inicio = time.time()
 
     def eventos():
         """Uma linha JSON por evento (NDJSON): o navegador mostra o texto aos poucos."""
@@ -292,14 +390,36 @@ def chat():
                 if tipo in ("texto", "status"):
                     yield json.dumps({"tipo": tipo, "conteudo": dado}, ensure_ascii=False) + "\n"
                 else:
-                    yield json.dumps(dict(dado, tipo="fim"), ensure_ascii=False) + "\n"
+                    # id da resposta: liga o voto 👍/👎 (POST /api/feedback) a esta resposta nas métricas
+                    id_resposta = uuid.uuid4().hex[:16]
+                    metricas.registrar_resposta(id_resposta, pergunta, dado, (time.time() - inicio) * 1000)
+                    yield json.dumps(dict(dado, tipo="fim", id=id_resposta), ensure_ascii=False) + "\n"
         except Exception as erro:  # noqa: BLE001
             print(f"[ERRO] Ao responder: {type(erro).__name__}: {erro}", flush=True)
+            metricas.registrar_erro(type(erro).__name__)
             yield json.dumps({"tipo": "erro", "mensagem": _mensagem_erro_llm(erro)},
                              ensure_ascii=False) + "\n"
 
     return Response(stream_with_context(eventos()), mimetype="application/x-ndjson",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/feedback")
+def feedback():
+    """Voto 👍/👎 numa resposta: {"id": "...", "voto": "util" | "nao_util", "comentario": "..." (opcional)}."""
+    motivo = _excedeu_limite(f"feedback:{ip_cliente()}", global_tambem=False)
+    if motivo:
+        return _resposta_limite(motivo, "avaliações")
+    dados = request.get_json(silent=True) or {}
+    id_resposta = str(dados.get("id") or "")[:32]
+    voto = str(dados.get("voto") or "")
+    comentario = str(dados.get("comentario") or "")[:500]
+    if not re.fullmatch(r"[0-9a-f]{8,32}", id_resposta) or voto not in metricas.VOTOS:
+        return jsonify(erro="Avaliação inválida."), 400
+    if not metricas.registrar_feedback(id_resposta, voto, comentario):
+        # resposta antiga (servidor reiniciou) ou desconhecida: não é erro para quem votou
+        return jsonify(ok=False, motivo="resposta não encontrada"), 200
+    return jsonify(ok=True)
 
 
 @app.post("/api/voz/transcrever")
@@ -309,9 +429,9 @@ def transcrever_voz():
         return jsonify(erro="O chatbot não pôde ser iniciado. Tente novamente mais tarde."), 503
     if not estado["pronto"]:
         return jsonify(erro="O chatbot ainda está sendo preparado. Aguarde alguns segundos."), 503
-    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "?").split(",")[0].strip()
-    if _excedeu_limite(f"voz:{ip}"):
-        return jsonify(erro="Muitos áudios em pouco tempo. Aguarde um instante."), 429
+    motivo = _excedeu_limite(f"voz:{ip_cliente()}")
+    if motivo:
+        return _resposta_limite(motivo, "gravações")
 
     arquivo = request.files.get("audio")
     if arquivo is None:
@@ -363,4 +483,4 @@ def documento(nome):
 
 if __name__ == "__main__":
     garantir_inicializacao()
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False)
+    app.run(host="0.0.0.0", port=C.PORTA, debug=False)

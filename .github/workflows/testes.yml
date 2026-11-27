@@ -1,0 +1,32 @@
+# Roda os testes offline (sem internet de verdade e sem Groq) em todo push e Pull Request.
+# Se um teste falhar, o commit/PR fica marcado com ❌ no GitHub antes de chegar ao Render.
+name: Testes
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"     # a mesma do Render (render.yaml)
+          cache: pip
+          cache-dependency-path: requirements-testes.txt
+
+      - name: Instalar dependências dos testes
+        run: pip install -r requirements-testes.txt
+
+      - name: Conferir sintaxe de todos os arquivos Python
+        run: python -m compileall -q .
+
+      - name: Rodar os testes
+        run: python testes.py

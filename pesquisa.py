@@ -31,10 +31,11 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
+import config as C
 import verificador as V
 
-ATIVA = os.getenv("PESQUISA_ATIVA", "1") != "0"   # 0 = só a base local e fontes_oficiais.json (testes offline)
-LIMIAR_RELEVANCIA = float(os.getenv("PESQUISA_LIMIAR", "0.5") or 0.5)   # cobertura mínima "sobre o assunto"
+ATIVA = C.PESQUISA_ATIVA   # 0 = só a base local e fontes_oficiais.json (testes offline)
+LIMIAR_RELEVANCIA = C.PESQUISA_LIMIAR   # cobertura mínima "sobre o assunto"
 MAX_CATALOGO = 6000          # endereços guardados
 MAX_FILHOS_SITEMAP = 8       # sitemaps de um índice de sitemaps
 MAX_PAGINAS_INDICE = 30      # páginas-índice de 2º nível lidas por coleta (só para tirar links)
